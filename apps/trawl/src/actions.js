@@ -36,7 +36,7 @@ import { LANGUAGE_NAMES, LANGUAGES, languageOf, scaffold } from './scaffold.js';
 import { UNDO_ROWS, reverseScript, snapshotOf, snapshotRows, snapshotSummary, undoPlan, withSnapshot } from './undo.js';
 import { configDir, loadUndo, saveUndo } from './config.js';
 import { hostname } from 'node:os';
-import { AZURE_SQL_NOTE, BACKUP_INFO_SQL, SQLPACKAGE_FROM, absoluteOnServer, backupPath, backupRefusal, backupSql, bacpacRefusal, dumpCommand, toolFailure, sqlpackageCommand, fileSafe, loadCommand, multiUserSql, notInstalled, onThisMachine, parseBackupArgs, restoreFilesSql, restoreHeaderSql, restoreMoves, restoreSql, stamp, toolsFor } from './backup.js';
+import { AZURE_SQL_NOTE, BACKUP_INFO_SQL, SQLPACKAGE_FROM, absoluteOnServer, backupPath, backupRefusal, backupSql, bacpacRefusal, dumpCommand, toolFailure, sqlpackageCommand, fileSafe, loadCommand, multiUserSql, notInstalled, onThisMachine, parseBackupArgs, restoreFilesSql, restoreHeaderSql, restoreMoves, restoreSql, stamp, tableDataFor, toolsFor } from './backup.js';
 import { relTime } from '@fleet/kit/text.js';
 import { APP_NAMES, TAKEN_BY, contextIn, copiedNote, familyDir, notMine, pathArg as familyPath, projectAt, projectWiring, quoteArg, readActivity, takeLine } from '@fleet/kit/family.js';
 import { timelineItems, wiringText } from './timeline.js';
@@ -3336,6 +3336,8 @@ export async function exportBacpac(ctx, rest = '') {
   if (!t) return;
   const { conn } = t;
   const database = ctx.session.database;
+  const data = t.args.noData.length ? leaveDataOut(ctx, database, t.args.noData) : null;
+  if (data === false) return;
   const full = t.args.file ? resolve(pathArg(t.args.file)) : join(configDir(), 'backups', `${fileSafe(conn.name)}-${fileSafe(database)}-${stamp()}.bacpac`);
   const password = await toolPassword(ctx, conn);
   if (password === undefined) return;
@@ -3344,7 +3346,11 @@ export async function exportBacpac(ctx, rest = '') {
   } catch (e) {
     return ctx.note(`Couldn't make ${dirname(full)}: ${firstLine(e.message)}`, 'error');
   }
-  const { command, env } = sqlpackageCommand(conn, { database, file: full, password });
+  const { command, env } = sqlpackageCommand(conn, { database, file: full, password, tableData: data?.keep });
+  // cmd.exe takes a line of at most 8191 characters, and each table kept is a TableData of its own.
+  if (data && process.platform === 'win32' && command.length > 8000) {
+    return ctx.note(`Naming the ${data.keep.length} tables whose data to keep makes SqlPackage's command line longer than Windows allows. Leave out the data of more tables at once with a pattern (log.*, *History), or export from WSL or another system.`, 'error');
+  }
   const r = await runTool(ctx, 'sqlpackage', 'sqlserver', command, env, { title: `Export ${database} on ${conn.name} to a .bacpac`, label: `Exporting ${database} with SqlPackage`, cwd: dirname(full), file: full, server: conn.server });
   if (!r.ok) {
     // Half an export is no bacpac.
@@ -3354,9 +3360,37 @@ export async function exportBacpac(ctx, rest = '') {
     return r;
   }
   const size = fileSize(full);
-  ctx.note(`Exported ${database} to ${full}${size ? ` (${size})` : ''}.\n/import-bacpac ${typedPath(full)} makes it a database (--as <database>).`, 'ok');
+  const without = data ? ` Without the data of ${data.skipped.length === 1 ? data.skipped[0] : `${data.skipped.length} tables`}.` : '';
+  ctx.note(`Exported ${database} to ${full}${size ? ` (${size})` : ''}.${without}\n/import-bacpac ${typedPath(full)} makes it a database (--as <database>).`, 'ok');
   ctx.logActivity?.(`sqlpackage export ${database} on ${conn.name}`, { kind: 'backup' });
   return r;
+}
+
+/**
+ * /export-bacpac --no-data: the tables of `database` (from the schema Trawl read) whose data to keep,
+ * as tableDataFor works them out, with what it found said in the log; false after saying why not.
+ */
+function leaveDataOut(ctx, database, noData) {
+  const schema = ctx.schema;
+  if (!schema || (schema.database && schema.database.toLowerCase() !== String(database).toLowerCase())) {
+    ctx.note(`Trawl hasn't read ${database}'s tables yet, so it can't tell SqlPackage which to keep: wait for the Explorer to fill in (or /refresh), then export again.`, 'error');
+    return false;
+  }
+  const tables = schema.objects.filter((o) => o.kind === 'table').map(objectName);
+  const data = tableDataFor(tables, noData, schema.foreignKeys);
+  if (data.unmatched.length) {
+    ctx.note(`No table in ${database} is ${data.unmatched.join(', ')}: name one as schema.table or table, or use * (log.*, *History).`, 'error');
+    return false;
+  }
+  if (!data.keep.length) {
+    ctx.note(`That leaves out every table's data, and SqlPackage takes no data to mean all of it. For the schema alone, use SqlPackage's /Action:Extract (a .dacpac).`, 'error');
+    return false;
+  }
+  ctx.note(`Leaving out the data of ${data.skipped.join(', ')} (their schema stays).`);
+  if (data.orphans.length) {
+    ctx.note(`${data.orphans.map((o) => `${o.from} points into ${o.to}`).join('; ')}: its rows will point at rows that aren't there, so an import fails on that foreign key unless its data is left out too.`);
+  }
+  return data;
 }
 
 /** /import-bacpac <file> [--as <database>]: a .bacpac into a new database (SqlPackage never imports over one that's there). */
