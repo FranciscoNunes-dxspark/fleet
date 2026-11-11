@@ -4,7 +4,7 @@ import { writeFile } from 'node:fs/promises';
 import { extname, resolve } from 'node:path';
 import { label } from './azure/arm.js';
 import { EXPORTS } from './export.js';
-import { findLogin, ruleCovering, ruleName, trawlCommand } from './trawl.js';
+import { bestRank, likelyFirst, rankedLogin, ruleCovering, ruleName, trawlCommand } from './trawl.js';
 import { mapLimited, sqlByLabel } from './tree.js';
 import { clip } from '@fleet/kit/claude-cli.js';
 import { configFile } from './config.js';
@@ -892,23 +892,39 @@ export async function firewall(ctx, which) {
   return letMeIn(ctx, server, { always: true });
 }
 
-// What sqlSources read, per loaded subscription: reading every app is the slow part of T, and the
-// answer holds until r loads the subscription again.
+// What each app's and slot's connection strings and settings hold, per loaded subscription
+// (target id → sources): reading them is the slow part of T, and they hold until r loads it again.
 const sqlSourcesOf = new WeakMap();
 
-/** Where an app's SQL logins might be: every app's and slot's connection strings and settings. */
-async function sqlSources(ctx, signal) {
-  const key = ctx.data;
-  if (key && sqlSourcesOf.has(key)) return sqlSourcesOf.get(key);
-  const targets = Object.values(ctx.targets());
-  const lists = await mapLimited(targets, 6, async (target) => {
-    const [strings, settings] = await Promise.all([ctx.provider.connectionStrings(target, { signal }).catch(() => ({})), ctx.settingsOf(target).catch(() => ({}))]);
-    return [...Object.entries(strings), ...Object.entries(settings)].map(([setting, value]) => ({ target, setting, value: String(value ?? '') }));
-  });
-  const sources = lists.flat();
-  // Not kept when cancelled: a partial read would be taken for the whole.
-  if (key && !signal?.aborted) sqlSourcesOf.set(key, sources);
-  return sources;
+/**
+ * The login the apps use for `server` (and `database`): findLogin's choice, read a few apps at a
+ * time in likelyFirst's order, stopping once one is found that nothing could beat. A subscription
+ * of many apps then reads only those beside the server, not every one of them.
+ */
+export async function loginFor(ctx, server, database, signal) {
+  const key = ctx.data ?? {};
+  if (!sqlSourcesOf.has(key)) sqlSourcesOf.set(key, new Map());
+  const read = sqlSourcesOf.get(key);
+  const targets = likelyFirst(Object.values(ctx.targets()), server);
+  const sources = [];
+  let best = null;
+  for (let i = 0; i < targets.length; i += 8) {
+    await mapLimited(targets.slice(i, i + 8), 8, async (target) => {
+      if (!read.has(target.id)) {
+        const [strings, settings] = await Promise.all([ctx.provider.connectionStrings(target, { signal }).catch(() => ({})), ctx.settingsOf(target).catch(() => ({}))]);
+        // Not kept when cancelled: a partial read would be taken for the whole.
+        if (signal?.aborted) return;
+        read.set(target.id, [...Object.entries(strings), ...Object.entries(settings)].map(([setting, value]) => ({ target, setting, value: String(value ?? '') })));
+      }
+      sources.push(...read.get(target.id));
+    });
+    if (signal?.aborted) break;
+    best = rankedLogin(sources, server, database);
+    if (best && best.rank <= bestRank(database)) break;
+  }
+  if (!best) return null;
+  const { rank: _, ...login } = best;
+  return login;
 }
 
 /**
@@ -928,7 +944,7 @@ export async function openInTrawl(ctx, which) {
   if (access === 'declined') ctx.note(`Trawl won't reach ${server.name} from here until its firewall lets this machine in (alt+f adds it).`);
   let login = null;
   const found = await ctx.task(`Look for the login the apps use for ${what}`, async (signal) => {
-    login = findLogin(await sqlSources(ctx, signal), server, database?.name);
+    login = await loginFor(ctx, server, database?.name, signal);
     if (!login) return { stdout: `No app's connection string has a login for ${what}: Trawl signs in with Entra (az)` };
     if (login.entra) return { stdout: `${label(login.target)} signs in to ${what} with Entra (${login.setting}), and so will Trawl (az)` };
     return { stdout: `The login ${login.user}, from ${label(login.target)}'s ${login.setting}: Trawl reads its password from there through az` };
