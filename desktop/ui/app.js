@@ -870,15 +870,14 @@ $('again').addEventListener('click', async () => {
 });
 
 // The title bar's buttons: the system's own bar is off (tauri.conf.json), so these are the window's.
-// Maximise shows ❐ while maximised, as Windows' own does, and a double click on the bar's empty parts
-// maximises too (Tauri's drag region).
+// Maximise shows the restore icon while maximised (style.css's body.maximised), as Windows' own does,
+// and a double click on the bar's empty parts maximises too (Tauri's drag region).
 const win = window.__TAURI__.window.getCurrentWindow();
 $('win-min').addEventListener('click', () => win.minimize());
 $('win-max').addEventListener('click', () => win.toggleMaximize());
 $('win-close').addEventListener('click', () => win.close());
 const showMaximised = async () => {
   const on = await win.isMaximized().catch(() => false);
-  $('win-max').textContent = on ? '❐' : '□';
   $('win-max').title = on ? 'Restore' : 'Maximise';
   document.body.classList.toggle('maximised', on);
 };

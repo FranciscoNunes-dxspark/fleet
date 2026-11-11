@@ -17,9 +17,16 @@
     <button type="button" class="side-toggle" id="toggle-projects" aria-pressed="false" title="Projects: the folders the fleet was in">projects</button>
     <button type="button" class="side-toggle" id="toggle-claude" aria-pressed="false" title="Ask Claude about what changed">claude</button>
     <span class="caption" aria-label="Window">
-      <button type="button" id="win-min" title="Minimise" aria-label="Minimise">─</button>
-      <button type="button" id="win-max" title="Maximise" aria-label="Maximise">□</button>
-      <button type="button" id="win-close" class="close-window" title="Close Fleet" aria-label="Close">✕</button>
+      <button type="button" id="win-min" title="Minimise" aria-label="Minimise">
+        <svg viewBox="0 0 10 10" aria-hidden="true"><path d="M0 5.5h10"/></svg>
+      </button>
+      <button type="button" id="win-max" title="Maximise" aria-label="Maximise">
+        <svg class="maximise" viewBox="0 0 10 10" aria-hidden="true"><rect x="0.5" y="0.5" width="9" height="9"/></svg>
+        <svg class="restore" viewBox="0 0 10 10" aria-hidden="true"><rect x="0.5" y="2.5" width="7" height="7"/><path d="M2.5 2.5v-2h7v7h-2"/></svg>
+      </button>
+      <button type="button" id="win-close" class="close-window" title="Close Fleet" aria-label="Close">
+        <svg viewBox="0 0 10 10" aria-hidden="true"><path d="M0.5 0.5l9 9M9.5 0.5l-9 9"/></svg>
+      </button>
     </span>
   </header>
   <div class="middle">
