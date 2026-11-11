@@ -128,7 +128,8 @@ Promise.all(['400', '700'].map((weight) => document.fonts.load(`${weight} ${term
   });
 
 const $ = (id) => document.getElementById(id);
-const send = (data) => invoke('write', { data });
+// A write failing (Fleet gone, being restarted) is already said by pty-exit.
+const send = (data) => invoke('write', { data }).catch(() => {});
 /** Tells the host something (`ESC ] 5381 ; <json> BEL`, typed as keys are: the host takes it out). */
 const tell = (msg) => send(`\x1b]5381;${JSON.stringify(msg)}\x07`);
 
@@ -790,9 +791,28 @@ term.attachCustomKeyEventHandler((e) => {
 const ended = $('ended');
 const endedText = $('ended-text');
 
-// Fleet's output: raw bytes through a channel (main.rs), straight to xterm.js.
+// Fleet's output: raw bytes through a channel (main.rs), straight to xterm.js. What xterm.js has drawn
+// goes back as `ack`, a few times a second at most rather than once a message: main.rs holds the
+// output back while too much of it waits to be drawn, so a flood can't bury the next keystroke.
+let drawn = 0;
+let ackTimer = null;
+const ackDrawn = () => {
+  ackTimer = null;
+  const bytes = drawn;
+  drawn = 0;
+  if (bytes) invoke('ack', { bytes }).catch(() => {});
+};
 const output = new window.__TAURI__.core.Channel();
-output.onmessage = (data) => term.write(new Uint8Array(data));
+output.onmessage = (data) => {
+  const bytes = new Uint8Array(data);
+  term.write(bytes, () => {
+    drawn += bytes.length;
+    if (drawn >= 128 * 1024) {
+      clearTimeout(ackTimer);
+      ackDrawn();
+    } else if (!ackTimer) ackTimer = setTimeout(ackDrawn, 20);
+  });
+};
 listen('pty-exit', (e) => finished(`Fleet ended${e.payload ? ` (exit ${e.payload})` : ''}.`));
 
 term.onData(send);
