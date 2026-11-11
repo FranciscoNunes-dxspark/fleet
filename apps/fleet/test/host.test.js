@@ -195,7 +195,10 @@ test("in the desktop window a badge says why and comes as a toast, and the windo
   const { screen } = term;
   const states = () => [...term.written.matchAll(/\x1b\]5380;(.*?)\x07/g)].map((m) => JSON.parse(m[1]));
   const tell = (msg) => keys(`\x1b]5381;${JSON.stringify(msg)}\x07`);
+  const lists = () => [...term.written.matchAll(/\x1b\]5382;(.*?)\x07/g)].map((m) => JSON.parse(m[1]));
   await until(() => screen.row(0) === 'one 70x14', 'the app', { term });
+  // The palette's list comes at the start without being asked, so a hello the window sent too early doesn't leave it empty.
+  assert.deepEqual(lists()[0]?.apps.map((a) => a.id), ['one', 'two']);
 
   writeFileSync(join(family, 'two.mood.json'), JSON.stringify({ app: 'two', mood: 'worried', reason: 'api crashed', at: Date.now() }));
   await until(() => states().at(-1)?.toast?.text === 'api crashed', 'the toast', { term });
@@ -217,9 +220,9 @@ test("in the desktop window a badge says why and comes as a toast, and the windo
   await until(() => /can't be the prefix/.test(states().at(-1).notice), 'ctrl+c refused', { term });
 
   // A reload asks for everything again: the state and the palette's list (every app's commands).
-  const lists = () => [...term.written.matchAll(/\x1b\]5382;(.*?)\x07/g)].map((m) => JSON.parse(m[1]));
+  const asked = lists().length;
   tell({ hello: true });
-  await until(() => lists().length, 'the palette list', { term });
+  await until(() => lists().length > asked, 'the palette list again', { term });
   const list = lists().at(-1);
   assert.deepEqual(list.apps.map((a) => a.id), ['one', 'two']);
   assert.ok(list.fleet.some((f) => f.key === 'w' && f.keys === 'ctrl+b w'));
