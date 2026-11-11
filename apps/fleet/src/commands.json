@@ -839,8 +839,8 @@
   },
   {
    "name": "export-bacpac",
-   "args": "[file]",
-   "desc": "Export the database you're in as a .bacpac (schema and data) with SqlPackage; Azure SQL Database too"
+   "args": "[file] [--no-data <table>,…]",
+   "desc": "Export the database you're in as a .bacpac (schema and data) with SqlPackage; Azure SQL Database too; --no-data leaves some tables' data out"
   },
   {
    "name": "import-bacpac",
