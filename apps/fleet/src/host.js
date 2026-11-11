@@ -221,6 +221,10 @@ export class Host {
       this.onFolders(this.folders);
     }
     this.output.write(ENTER);
+    // The desktop window's palette lists every app's commands from this. It used to come only when
+    // the window said hello, which it does once, a moment after starting Fleet: a start slower than
+    // that lost the hello, and the palette stayed empty. Sent unasked too, the list is there either way.
+    if (this.desktop) this.sendCommands();
     this.input.on('data', this.onInput);
     this.output.on?.('resize', this.onResize);
     // What's waiting already shows in the bar; only what comes later is said.

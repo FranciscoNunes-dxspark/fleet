@@ -579,8 +579,14 @@ function openPalette() {
   const input = el('input', { autocomplete: 'off', spellcheck: false, placeholder: 'a command, an app, a key…', ariaLabel: 'Search every command' });
   const count = el('span', { className: 'count' });
   const top = el('div', { className: 'field-row' }, el('span', { className: 'sign', textContent: '›' }), input, count);
-  const all = paletteEntries();
+  let all = paletteEntries();
   let shown = [];
+  // No list yet (Fleet still starting, or the first hello lost): asked for again, and drawn when it comes.
+  own.refresh = () => {
+    all = paletteEntries();
+    draw();
+  };
+  if (!commands) tell({ hello: true });
   const run = (i) => {
     const e = shown[i];
     if (!e) return;
@@ -753,7 +759,14 @@ const parsed = (fn) => (data) => {
   return true;
 };
 term.parser.registerOscHandler(5380, parsed(drawBar));
-term.parser.registerOscHandler(5382, parsed((list) => (commands = list)));
+term.parser.registerOscHandler(
+  5382,
+  parsed((list) => {
+    commands = list;
+    // A palette opened before the list came fills in now.
+    if (own?.kind === 'palette') own.refresh?.();
+  }),
+);
 
 $('add').addEventListener('click', () => prefixed('a'));
 $('open-palette').addEventListener('click', openPalette);
@@ -815,8 +828,14 @@ async function begin() {
   try {
     await invoke('start', { cols: term.cols, rows: term.rows, output });
     term.focus();
-    // The palette's list (and the state, again): the host sends them when asked.
-    setTimeout(() => tell({ hello: true }), 1500);
+    // The palette's list (and the state, again): the host sends them at its start and when asked.
+    // Asked again a few times while none has come, in case Fleet wasn't reading yet.
+    const hello = (tries) =>
+      setTimeout(() => {
+        if (tries === 5 || !commands) tell({ hello: true });
+        if (tries > 1 && !commands) hello(tries - 1);
+      }, 1500);
+    hello(5);
   } catch (err) {
     finished(String(err));
   }
