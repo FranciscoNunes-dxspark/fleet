@@ -79,8 +79,11 @@ jobs:
           node-version: 22
           cache: npm
       # The runners fetch from Azure's Ubuntu mirror, which has stopped answering for half an hour at a
-      # time: apt then waits out its long default timeout on every package in turn. Short timeouts and
-      # retries make that fail in minutes, and Ubuntu's own archive is tried instead.
+      # time, even its name not resolving: apt then waits out its long default timeout on every package
+      # in turn. Short timeouts and retries make that fail in minutes, and Ubuntu's own archive is used
+      # instead. The images name the mirror in /etc/apt/apt-mirrors.txt (sources.list says
+      # mirror+file: and points there), so that's where it's taken out; sources.list too, for an image
+      # that names it directly.
       - name: The web view's libraries
         if: runner.os == 'Linux'
         timeout-minutes: 20
@@ -88,9 +91,17 @@ jobs:
           pkgs="libwebkit2gtk-4.1-dev libgtk-3-dev librsvg2-dev libayatana-appindicator3-dev patchelf"
           opts="-o Acquire::Retries=3 -o Acquire::http::Timeout=20 -o Acquire::https::Timeout=20"
           install() { sudo timeout 300 apt-get $opts update && sudo timeout 600 apt-get $opts install -y $pkgs; }
-          if ! install; then
-            echo "::warning::Azure's Ubuntu mirror didn't answer: installing from archive.ubuntu.com instead."
+          without_azure() {
+            echo "::warning::Azure's Ubuntu mirror $1: installing from archive.ubuntu.com instead."
+            if [ -f /etc/apt/apt-mirrors.txt ]; then
+              sudo sed -i '/azure\.archive\.ubuntu\.com/d' /etc/apt/apt-mirrors.txt
+              grep -q archive.ubuntu.com /etc/apt/apt-mirrors.txt || echo 'http://archive.ubuntu.com/ubuntu/' | sudo tee -a /etc/apt/apt-mirrors.txt >/dev/null
+            fi
             sudo sed -i 's#http://azure.archive.ubuntu.com#http://archive.ubuntu.com#g' /etc/apt/sources.list $(ls /etc/apt/sources.list.d/*.list /etc/apt/sources.list.d/*.sources 2>/dev/null)
+          }
+          timeout 10 getent hosts azure.archive.ubuntu.com >/dev/null || without_azure "doesn't resolve"
+          if ! install; then
+            without_azure "didn't answer"
             install
           fi
       # The runners come with rustup; stable is what the window is built with.
