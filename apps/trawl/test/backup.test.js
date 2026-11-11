@@ -372,6 +372,9 @@ test('many tables on Windows: DacFx in PowerShell, signed in from the environmen
   assert.match(DACFX_SCRIPT, /foreach \(\$rid in @\('win-x64', 'win'\)\)/);
   assert.match(DACFX_SCRIPT, /'\^net\(\\d\+\)\\\.\\d\+\$'/, 'the framework folders read by their version');
   assert.ok(DACFX_SCRIPT.indexOf("Join-Path 'runtimes'") < DACFX_SCRIPT.indexOf("$path = Join-Path $script:dacDir ($name + '.dll')"), 'runtimes before the top of the folder');
+  // Loaded up front, before DacFx, since PowerShell's own resolver would find the stand-in beside DacFx before any handler.
+  assert.ok(DACFX_SCRIPT.indexOf("Get-ChildItem -LiteralPath $dir -Filter '*.dll'") < DACFX_SCRIPT.indexOf('[void][System.Reflection.Assembly]::LoadFrom($dac)'));
+  assert.match(DACFX_SCRIPT, /SqlClient loaded from: /, 'a failure says which SqlClient it had');
   assert.match(DACFX_SCRIPT, /\n'@\n/, "the C# here-string closes at a line's start, as PowerShell needs");
 });
 
