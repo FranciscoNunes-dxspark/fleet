@@ -12,7 +12,7 @@ import { nextTheme } from '../src/settings.js';
 import { run } from '@fleet/kit/run.js';
 import { notification, worthNotifying } from '../src/notify.js';
 import { EXPORTS, toCsv, toJson, toMarkdown } from '../src/export.js';
-import { findLogin, parseSqlConnectionString, ruleCovering, ruleName, trawlCommand, trawlName } from '../src/trawl.js';
+import { bestRank, findLogin, likelyFirst, parseSqlConnectionString, rankedLogin, ruleCovering, ruleName, trawlCommand, trawlName } from '../src/trawl.js';
 
 test('commands: exact names, unambiguous prefixes, and completion of their argument', () => {
   assert.equal(findCommand('kql').name, 'kql');
@@ -125,6 +125,17 @@ test('trawl: SQL connection strings in their spellings, the login an app uses, t
   assert.deepEqual(findLogin(sources.slice(0, 2), server, 'orders'), { target: web, setting: 'Mi', user: null, entra: true });
   assert.equal(findLogin(sources, server, 'billing').setting, 'Any', 'one naming no database counts for any');
   assert.equal(findLogin(sources.slice(0, 1), server, 'orders'), null);
+
+  assert.equal(rankedLogin(sources, server, 'orders').rank, bestRank('orders'), 'a SQL login naming the database: nothing beats it');
+  assert.equal(rankedLogin(sources.slice(0, 2), server, 'orders').rank, 1);
+  assert.equal(rankedLogin(sources.slice(2, 3), server, null).rank, bestRank(null));
+
+  // The apps beside the server first, each before its slots, otherwise as they were.
+  const order = likelyFirst(
+    [{ name: 'a', resourceGroup: 'other' }, { name: 'b', slot: 's', resourceGroup: 'RG-PROD' }, { name: 'c', resourceGroup: 'other', slot: 's' }, { name: 'b', resourceGroup: 'rg-prod' }, { name: 'd', resourceGroup: 'other' }],
+    { ...server, resourceGroup: 'rg-prod' },
+  );
+  assert.deepEqual(order.map((t) => [t.name, t.slot ?? ''].join('/')), ['b/', 'b/s', 'a/', 'd/', 'c/s']);
 
   const login = findLogin(sources, server, 'orders');
   assert.equal(trawlCommand({ server, database: { name: 'orders' }, login, subscription: 's1', prod: true }), '/azure-sql shop.database.windows.net orders --name shop-orders --user app --password-from rg-prod/api --subscription s1 --prod');

@@ -73,6 +73,17 @@ export const usesEntra = (parsed) => /active ?directory|entra/i.test(parsed.auth
  * one signing in with Entra. Returns { target, setting, user, entra } (never the password), or null.
  */
 export function findLogin(sources, server, database) {
+  const best = rankedLogin(sources, server, database);
+  if (!best) return null;
+  const { rank: _, ...login } = best;
+  return login;
+}
+
+/** The best rank a login can have for `database`: a SQL login naming it (0), or naming none when no database is asked for (2). */
+export const bestRank = (database) => (database ? 0 : 2);
+
+/** findLogin's choice with its `rank` (lower is better; bestRank says when nothing can beat it), or null. */
+export function rankedLogin(sources, server, database) {
   const db = database?.toLowerCase();
   const found = [];
   for (const src of sources) {
@@ -85,9 +96,17 @@ export function findLogin(sources, server, database) {
     found.push({ target: src.target, setting: src.setting, user: entra ? null : p.user, entra, rank: (db && pdb === db ? 0 : 2) + (entra ? 1 : 0) });
   }
   found.sort((a, b) => a.rank - b.rank);
-  if (!found.length) return null;
-  const { rank: _, ...best } = found[0];
-  return best;
+  return found[0] ?? null;
+}
+
+/**
+ * The order to read the apps in when looking for `server`'s login: those in its resource group
+ * first (an app's database is nearly always beside it), and each app before its slots.
+ */
+export function likelyFirst(targets, server) {
+  const group = server.resourceGroup?.toLowerCase();
+  const score = (t) => (t.resourceGroup?.toLowerCase() === group ? 0 : 2) + (t.slot ? 1 : 0);
+  return targets.map((t, i) => ({ t, i, s: score(t) })).sort((a, b) => a.s - b.s || a.i - b.i).map((x) => x.t);
 }
 
 /** The name Trawl keeps the connection under: "<server>-<database>", or the server's alone. */

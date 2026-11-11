@@ -2,6 +2,7 @@
 // command copied for its prompt, the firewall checked first), a container app's logs and restart, storage.
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
+import { loginFor } from '../src/actions.js';
 import { KEYS, start, tempHome, type, until } from './helpers.js';
 
 let cleanup;
@@ -15,6 +16,35 @@ const command = async (app, line) => {
 };
 
 const rules = (app, name) => app.provider.state.sqlServers.find((s) => s.name === name).rules;
+
+test("T's login: the apps beside the server read first, a few at a time, and none after one nothing can beat; kept for the next", async () => {
+  const server = { name: 'shop', fqdn: 'shop.database.windows.net', resourceGroup: 'rg-shop' };
+  // Thirty apps elsewhere, and the one that uses the server last in the list.
+  const targets = Object.fromEntries(
+    [...Array.from({ length: 30 }, (_, i) => ({ id: `/x/app${i}`, name: `app${i}`, resourceGroup: 'rg-other' })), { id: '/x/shop-api', name: 'shop-api', resourceGroup: 'rg-shop' }].map((t) => [t.id, t]),
+  );
+  const asked = [];
+  const ctx = {
+    data: {},
+    targets: () => targets,
+    settingsOf: async () => ({}),
+    provider: {
+      connectionStrings: async (t) => (asked.push(t.name), t.name === 'shop-api' ? { Db: 'Server=tcp:shop.database.windows.net;Database=orders;User ID=app;Password=secret' } : {}),
+    },
+  };
+  const login = await loginFor(ctx, server, 'orders');
+  assert.deepEqual([login.target.name, login.user, login.entra], ['shop-api', 'app', false]);
+  assert.ok(asked[0] === 'shop-api' && asked.length <= 8, `read ${asked.length}: ${asked.join(' ')}`);
+  assert.ok(!('password' in login));
+
+  asked.length = 0;
+  assert.equal((await loginFor(ctx, server, 'orders')).target.name, 'shop-api');
+  assert.deepEqual(asked, [], 'nothing read again');
+
+  // A database no app names: every app is read to be sure, and Trawl signs in with Entra.
+  assert.equal(await loginFor(ctx, { ...server, fqdn: 'else.database.windows.net', name: 'else' }, 'orders'), null);
+  assert.equal(asked.length, 31 - 8, 'only those the first look left unread');
+});
 
 test("T on a production database: the firewall rule asked for by name, then a command for Trawl naming the app whose login it uses, the password nowhere", async () => {
   const copied = [];

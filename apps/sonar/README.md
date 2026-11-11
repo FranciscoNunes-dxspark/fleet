@@ -483,7 +483,9 @@ prompt, such as
 ```
 
 Paste it into Trawl's prompt and Trawl saves the connection and opens it. Sonar looks through the
-apps' connection strings and settings for one pointing at that server and database: when one signs in
+apps' connection strings and settings for one pointing at that server and database (the apps in the
+server's resource group first, a few at a time, stopping at a SQL login for that very database; what
+it read is kept until `r`, so the next `T` is quick): when one signs in
 with a SQL login, the command names the login and the app it's in, and Trawl reads the password from
 that app through the Azure CLI, so it never passes through Sonar, the clipboard or the log (which says
 which app it comes from). When the app signs in with Entra (`Authentication=Active Directory…`), or no
