@@ -368,6 +368,10 @@ test('many tables on Windows: DacFx in PowerShell, signed in from the environmen
   assert.deepEqual([...read].filter((v) => v !== 'TRAWL_DACFX').sort(), Object.keys(run.env).sort());
   assert.match(DACFX_SCRIPT, /\.ExportBacpac\(\$env:TRAWL_DAC_FILE, \$env:TRAWL_DAC_DATABASE, \$options, \$tables, \$null\)/);
   assert.match(DACFX_SCRIPT, /runtimes\\win-x64\\native/, 'backslashes kept');
+  // SqlClient's real Windows build is under runtimes\win\lib\<framework>; the one at the top only says "not supported".
+  assert.match(DACFX_SCRIPT, /foreach \(\$rid in @\('win-x64', 'win'\)\)/);
+  assert.match(DACFX_SCRIPT, /'\^net\(\\d\+\)\\\.\\d\+\$'/, 'the framework folders read by their version');
+  assert.ok(DACFX_SCRIPT.indexOf("Join-Path 'runtimes'") < DACFX_SCRIPT.indexOf("$path = Join-Path $script:dacDir ($name + '.dll')"), 'runtimes before the top of the folder');
   assert.match(DACFX_SCRIPT, /\n'@\n/, "the C# here-string closes at a line's start, as PowerShell needs");
 });
 
