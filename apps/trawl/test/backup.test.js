@@ -387,7 +387,8 @@ test('/export-bacpac --no-data with more tables than Windows can name goes throu
   };
   await a.exportBacpac(ctx, `${JSON.stringify(join(base, 'big.bacpac'))} --no-data *AuditLogs`);
   assert.equal(ctx.ran.length, 1);
-  assert.match(ctx.ran[0].command, /^pwsh .* -File "?\S+export\.ps1"?$/);
+  // pwsh, or its full path where this machine has it installed (GitHub's Windows runners do).
+  assert.match(ctx.ran[0].command, /^(pwsh|"[^"]*pwsh\.exe") -NoLogo .* -File "?\S+export\.ps1"?$/);
   assert.equal(ctx.ran[0].env.TRAWL_DAC_DATABASE, 'shop');
   assert.match(ctx.ran[0].env.TRAWL_DAC_CONNECTION, /Password=s3cret/);
   assert.equal(listed.length, 1200);
