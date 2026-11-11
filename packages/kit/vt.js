@@ -37,6 +37,11 @@ function styleKey(a) {
   return k;
 }
 
+// What an SGR sequence leads to from a style: `${style}|${parameters}` → { attrs, style }. Shared by
+// every terminal (it depends on nothing else), and emptied when it grows past its size.
+const SGR_MEMO = new Map();
+const SGR_MEMO_SIZE = 4096;
+
 // Whether a cell's character takes two columns (only ever one outside ASCII).
 const wide = (ch) => ch.length > 1 || ch.charCodeAt(0) > 0x7e ? stringWidth(ch) === 2 : false;
 
@@ -156,6 +161,19 @@ export class VirtualTerminal {
         } else if (c === '\t') this.x = Math.min(this.columns - 1, (Math.floor(this.x / 8) + 1) * 8);
         else if (c === '\x07') out += c;
         continue;
+      }
+      if (this.state === 'csi') {
+        // A CSI's parameters a slice at a time, up to its final byte (or an ESC that cuts it short).
+        let j = i;
+        while (j < s.length) {
+          const c = s.charCodeAt(j);
+          if ((c >= 0x40 && c <= 0x7e) || c === 0x1b) break;
+          j++;
+        }
+        this.seq += s.slice(i, j);
+        i = j;
+        if (this.seq.length > MAX_SEQUENCE) this.state = 'ground';
+        if (i >= s.length || this.state !== 'csi') continue;
       }
       const c = s[i++];
       if (this.seq.length > MAX_SEQUENCE) this.state = 'ground';
@@ -508,7 +526,17 @@ export class VirtualTerminal {
   }
 
   sgr(body) {
-    const a = this.attrs;
+    // An app sets the same few colours frame after frame, and what a change leads to depends only on
+    // the style before it and the change: worked out once, then looked up. The attributes are never
+    // changed in place (a new object each time), so the one kept can be shared.
+    const memo = `${this.style}|${body}`;
+    const hit = SGR_MEMO.get(memo);
+    if (hit) {
+      this.attrs = hit.attrs;
+      this.style = hit.style;
+      return;
+    }
+    const a = { ...this.attrs };
     const parts = body === '' ? ['0'] : body.split(';');
     for (let i = 0; i < parts.length; i++) {
       const part = parts[i];
@@ -557,7 +585,10 @@ export class VirtualTerminal {
       else if ((code >= 40 && code <= 47) || (code >= 100 && code <= 107)) a.bg = String(code);
       else if (code === 49) a.bg = '';
     }
+    this.attrs = a;
     this.style = styleKey(a);
+    if (SGR_MEMO.size >= SGR_MEMO_SIZE) SGR_MEMO.clear();
+    SGR_MEMO.set(memo, { attrs: a, style: this.style });
   }
 
   // ---- reading it -------------------------------------------------------------------------------
