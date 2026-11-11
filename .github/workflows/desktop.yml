@@ -17,6 +17,15 @@ on:
       - 'packages/kit/**'
       - 'patches/**'
 
+# One run at a time per branch, the whole of it: the version is picked in plan, from the releases
+# there are, and baked into the bundles, so two runs that overlapped (two merges a few minutes apart)
+# both built the same version and the second failed on its tag. A run queued behind another picks
+# its version once that one has released. A newer push replaces one still waiting, which is fine:
+# it carries everything the waiting one would have.
+concurrency:
+  group: desktop-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
   plan:
     runs-on: ubuntu-latest
