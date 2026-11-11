@@ -279,3 +279,143 @@ export function toolFailure(tool, e, { server } = {}) {
   }
   return out.join('\n');
 }
+
+// ---------------------------------------------------------------------------------------------------
+// Many tables on Windows: SqlPackage takes the tables whose data to export only as /p:TableData= on its
+// command line, one per table, and Windows caps a command line (8191 characters through cmd.exe, 32767
+// for any program). Past that, the export goes through SqlPackage's own library, DacFx, from PowerShell
+// 7: DacServices.ExportBacpac takes the tables as a list, read here from a file, so there's no limit.
+
+/** Whether SqlPackage's command line is too long for the shell run.js starts it through. */
+export const tooLongForShell = (command, platform = process.platform) => platform === 'win32' && command.length > 8000;
+
+export const POWERSHELL_FROM = 'PowerShell 7 (https://aka.ms/powershell): the export of many tables goes through it on Windows';
+
+/** A value for a SqlClient connection string: quoted when it has to be (a ; or a quote in a password). */
+const csValue = (v) => {
+  const s = String(v);
+  return /[;'"=]/.test(s) || s !== s.trim() ? `"${s.replace(/"/g, '""')}"` : s;
+};
+
+/**
+ * The connection string DacFx signs in with, as SqlPackage would from its command line: Entra through
+ * az (Active Directory Default), a SQL login with its password, else Windows' own sign-in.
+ */
+export function dacfxConnectionString(conn, { database, password }) {
+  const parts = [['Data Source', conn.server], ['Initial Catalog', database]];
+  if (conn.auth === 'azure-cli') parts.push(['Authentication', 'Active Directory Default']);
+  else if (conn.user) {
+    parts.push(['User ID', conn.auth === 'ntlm' && conn.domain ? `${conn.domain}\\${conn.user}` : conn.user]);
+    if (password != null) parts.push(['Password', password]);
+  } else parts.push(['Integrated Security', 'True']);
+  parts.push(['Encrypt', String(conn.encrypt ?? true) === 'false' ? 'False' : 'True']);
+  if (conn.trustCert) parts.push(['TrustServerCertificate', 'True']);
+  return parts.map(([k, v]) => `${k}=${csValue(v)}`).join(';');
+}
+
+/** The tables to keep as the script reads them: schema, a tab, the table, one a line (a name may hold a dot). */
+export const tableListText = (tables) =>
+  tables
+    .map((t) => {
+      const i = t.indexOf('.');
+      return `${t.slice(0, i)}\t${t.slice(i + 1)}`;
+    })
+    .join('\n');
+
+/**
+ * The PowerShell run: { command, env }. Everything it needs comes in the environment, the password
+ * with the connection string, so none of it is on a command line; `script` and `list` are the files
+ * DACFX_SCRIPT and tableListText were written to.
+ */
+export function dacfxCommand(conn, { database, file, password, script, list }, platform = process.platform) {
+  const command = ['pwsh', '-NoLogo', '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', shellArg(script, platform)].join(' ');
+  return {
+    command,
+    env: { TRAWL_DAC_CONNECTION: dacfxConnectionString(conn, { database, password }), TRAWL_DAC_DATABASE: database, TRAWL_DAC_FILE: file, TRAWL_DAC_TABLES: list },
+  };
+}
+
+// The script. It finds DacFx beside SqlPackage on PATH (or in the dotnet tools' store, where
+// `dotnet tool install` puts it; TRAWL_DACFX names it otherwise), loads it with its own folder for the
+// libraries it needs, and exports with the options SqlPackage's command line gets (no query time
+// limit, Fast compression, no second check of the schema), each set only where this DacFx has it.
+// Its progress comes through a small C# class, since DacFx raises its events on its own threads,
+// where a PowerShell block can't run; without it the export still runs, quietly. A failure is said
+// after "*** ", as SqlPackage says its own, which toolFailure keeps.
+export const DACFX_SCRIPT = String.raw`$ErrorActionPreference = 'Stop'
+try {
+  $dac = $env:TRAWL_DACFX
+  if (-not $dac) {
+    $cmd = Get-Command sqlpackage -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
+    if (-not $cmd) { throw "SqlPackage isn't on PATH, and its library (Microsoft.SqlServer.Dac.dll) is found beside it. Set TRAWL_DACFX to the library's path otherwise." }
+    $dir = Split-Path -Parent $cmd.Source
+    $dac = Join-Path $dir 'Microsoft.SqlServer.Dac.dll'
+    if (-not (Test-Path -LiteralPath $dac)) {
+      $store = Join-Path $dir '.store'
+      $found = $null
+      if (Test-Path -LiteralPath $store) {
+        $found = Get-ChildItem -LiteralPath $store -Recurse -Filter 'Microsoft.SqlServer.Dac.dll' -ErrorAction SilentlyContinue | Sort-Object LastWriteTime -Descending | Select-Object -First 1
+      }
+      if (-not $found) { throw "Couldn't find Microsoft.SqlServer.Dac.dll beside SqlPackage ($dir). Set TRAWL_DACFX to its path." }
+      $dac = $found.FullName
+    }
+  }
+  $script:dacDir = Split-Path -Parent $dac
+  $env:PATH = (Join-Path $script:dacDir 'runtimes\win-x64\native') + ';' + $script:dacDir + ';' + $env:PATH
+  [System.AppContext]::SetSwitch('Switch.Microsoft.Data.SqlClient.UseManagedNetworkingOnWindows', $true)
+  [System.AppDomain]::CurrentDomain.add_AssemblyResolve([System.ResolveEventHandler] {
+    param($source, $request)
+    $name = (New-Object System.Reflection.AssemblyName($request.Name)).Name
+    $path = Join-Path $script:dacDir ($name + '.dll')
+    if (Test-Path -LiteralPath $path) { return [System.Reflection.Assembly]::LoadFrom($path) }
+    return $null
+  })
+  [void][System.Reflection.Assembly]::LoadFrom($dac)
+
+  $tables = New-Object 'System.Collections.Generic.List[System.Tuple[string,string]]'
+  foreach ($line in [System.IO.File]::ReadAllLines($env:TRAWL_DAC_TABLES, [System.Text.Encoding]::UTF8)) {
+    if (-not $line) { continue }
+    $tab = $line.IndexOf([char]9)
+    $tables.Add([System.Tuple[string,string]]::new($line.Substring(0, $tab), $line.Substring($tab + 1)))
+  }
+
+  $services = New-Object Microsoft.SqlServer.Dac.DacServices -ArgumentList $env:TRAWL_DAC_CONNECTION
+  try {
+    Add-Type -ReferencedAssemblies $dac -TypeDefinition @'
+using System;
+using Microsoft.SqlServer.Dac;
+public static class TrawlDacProgress {
+  public static void Follow(DacServices services) {
+    services.Message += (s, e) => Console.Out.WriteLine(e.Message.ToString());
+    services.ProgressChanged += (s, e) => { if (!string.IsNullOrEmpty(e.Message)) Console.Out.WriteLine(e.Message + " (" + e.Status + ")"); };
+  }
+}
+'@
+    [TrawlDacProgress]::Follow($services)
+  } catch {
+    [Console]::Out.WriteLine('DacFx gives no progress here: the export runs all the same.')
+  }
+
+  $options = New-Object Microsoft.SqlServer.Dac.DacExportOptions
+  foreach ($want in @(@('CommandTimeout', 0), @('VerifyExtraction', $false), @('CompressionOption', 'Fast'))) {
+    $property = $options.GetType().GetProperty($want[0])
+    if (-not $property -or -not $property.CanWrite) { continue }
+    try {
+      $value = $want[1]
+      if ($property.PropertyType.IsEnum) { $value = [Enum]::Parse($property.PropertyType, $value) }
+      $property.SetValue($options, $value)
+    } catch { }
+  }
+
+  [Console]::Out.WriteLine('Exporting ' + $env:TRAWL_DAC_DATABASE + ' through DacFx, the data of ' + $tables.Count + ' tables')
+  $services.ExportBacpac($env:TRAWL_DAC_FILE, $env:TRAWL_DAC_DATABASE, $options, $tables, $null)
+  [Console]::Out.WriteLine('Exported to ' + $env:TRAWL_DAC_FILE)
+} catch {
+  $top = $_.Exception
+  $inner = $top
+  while ($inner.InnerException) { $inner = $inner.InnerException }
+  [Console]::Error.WriteLine('*** Error exporting database: ' + $top.Message)
+  if ($inner -ne $top) { [Console]::Error.WriteLine($inner.Message) }
+  exit 1
+}
+`;

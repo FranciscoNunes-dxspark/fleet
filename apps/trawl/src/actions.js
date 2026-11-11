@@ -1,6 +1,6 @@
 // Every operation the UI offers, written once. Keys and slash commands both call these.
 // `ctx` is the app's handle: session, schema, query, confirm, note, prefill, and so on (see App.jsx).
-import { mkdirSync, readFileSync, readdirSync, rmdirSync, statSync, unlinkSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, rmdirSync, statSync, unlinkSync, writeFileSync } from 'node:fs';
 import { readFile, writeFile } from 'node:fs/promises';
 import { basename, dirname, extname, join, resolve } from 'node:path';
 import { ADD_USAGE, azureSqlConnection, cleanFolder, commitMode, describeConn, findAzureSql, isReadOnly, parseAddArgs, parseAzureSqlArgs, splitArgs, sshText } from './connections.js';
@@ -35,8 +35,8 @@ import { generateScript, refValuesSql } from './generate.js';
 import { LANGUAGE_NAMES, LANGUAGES, languageOf, scaffold } from './scaffold.js';
 import { UNDO_ROWS, reverseScript, snapshotOf, snapshotRows, snapshotSummary, undoPlan, withSnapshot } from './undo.js';
 import { configDir, loadUndo, saveUndo } from './config.js';
-import { hostname } from 'node:os';
-import { AZURE_SQL_NOTE, BACKUP_INFO_SQL, SQLPACKAGE_FROM, absoluteOnServer, backupPath, backupRefusal, backupSql, bacpacRefusal, dumpCommand, toolFailure, sqlpackageCommand, fileSafe, loadCommand, multiUserSql, notInstalled, onThisMachine, parseBackupArgs, restoreFilesSql, restoreHeaderSql, restoreMoves, restoreSql, stamp, tableDataFor, toolsFor } from './backup.js';
+import { hostname, tmpdir } from 'node:os';
+import { AZURE_SQL_NOTE, BACKUP_INFO_SQL, SQLPACKAGE_FROM, absoluteOnServer, backupPath, backupRefusal, backupSql, bacpacRefusal, dumpCommand, toolFailure, sqlpackageCommand, fileSafe, loadCommand, multiUserSql, notInstalled, onThisMachine, parseBackupArgs, restoreFilesSql, restoreHeaderSql, restoreMoves, restoreSql, stamp, tableDataFor, toolsFor, DACFX_SCRIPT, POWERSHELL_FROM, dacfxCommand, tableListText, tooLongForShell } from './backup.js';
 import { relTime } from '@fleet/kit/text.js';
 import { APP_NAMES, TAKEN_BY, contextIn, copiedNote, familyDir, notMine, pathArg as familyPath, projectAt, projectWiring, quoteArg, readActivity, takeLine } from '@fleet/kit/family.js';
 import { timelineItems, wiringText } from './timeline.js';
@@ -3237,8 +3237,7 @@ const fileSize = (p) => {
   }
 };
 
-async function runTool(ctx, tool, kind, command, env, { title, label, cwd, file, server }) {
-  const from = toolsFor(kind)?.from ?? SQLPACKAGE_FROM;
+async function runTool(ctx, tool, kind, command, env, { title, label, cwd, file, server, from = toolsFor(kind)?.from ?? SQLPACKAGE_FROM }) {
   return ctx.task(
     title,
     async (signal, report) => {
@@ -3346,12 +3345,32 @@ export async function exportBacpac(ctx, rest = '') {
   } catch (e) {
     return ctx.note(`Couldn't make ${dirname(full)}: ${firstLine(e.message)}`, 'error');
   }
-  const { command, env } = sqlpackageCommand(conn, { database, file: full, password, tableData: data?.keep });
-  // cmd.exe takes a line of at most 8191 characters, and each table kept is a TableData of its own.
-  if (data && process.platform === 'win32' && command.length > 8000) {
-    return ctx.note(`Naming the ${data.keep.length} tables whose data to keep makes SqlPackage's command line longer than Windows allows. Leave out the data of more tables at once with a pattern (log.*, *History), or export from WSL or another system.`, 'error');
+  const platform = ctx.platform ?? process.platform;
+  let run = { tool: 'sqlpackage', label: `Exporting ${database} with SqlPackage`, ...sqlpackageCommand(conn, { database, file: full, password, tableData: data?.keep }, platform) };
+  // Each table kept is a /p:TableData= of its own, and Windows caps a command line: past that, the
+  // same export through SqlPackage's library from PowerShell, the tables in a file (backup.js).
+  let scratch = null;
+  if (data && tooLongForShell(run.command, platform)) {
+    try {
+      scratch = mkdtempSync(join(tmpdir(), 'trawl-dacfx-'));
+      const script = join(scratch, 'export.ps1');
+      const list = join(scratch, 'tables.txt');
+      writeFileSync(script, DACFX_SCRIPT);
+      writeFileSync(list, tableListText(data.keep));
+      run = { tool: 'pwsh', label: `Exporting ${database} with DacFx`, from: POWERSHELL_FROM, ...dacfxCommand(conn, { database, file: full, password, script, list }, platform) };
+    } catch (e) {
+      if (scratch) rmSync(scratch, { recursive: true, force: true });
+      return ctx.note(`Couldn't write the list of tables to keep: ${firstLine(e.message)}`, 'error');
+    }
+    ctx.note(`${data.keep.length} tables are too many to name on Windows' command line, so the export goes through SqlPackage's library (DacFx) in PowerShell 7 instead.`);
   }
-  const r = await runTool(ctx, 'sqlpackage', 'sqlserver', command, env, { title: `Export ${database} on ${conn.name} to a .bacpac`, label: `Exporting ${database} with SqlPackage`, cwd: dirname(full), file: full, server: conn.server });
+  let r;
+  try {
+    r = await runTool(ctx, run.tool, 'sqlserver', run.command, run.env, { title: `Export ${database} on ${conn.name} to a .bacpac`, label: run.label, cwd: dirname(full), file: full, server: conn.server, ...(run.from ? { from: run.from } : {}) });
+  } finally {
+    // The list and the script, never the password: that was only ever in the environment.
+    if (scratch) rmSync(scratch, { recursive: true, force: true });
+  }
   if (!r.ok) {
     // Half an export is no bacpac.
     try {
