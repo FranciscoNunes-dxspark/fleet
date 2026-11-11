@@ -260,7 +260,7 @@ test('.bacpac: refusals, and SqlPackage command lines', () => {
   assert.deepEqual(parseBackupArgs(['a.bacpac', '--as', 'x'], { restore: true, command: 'import-bacpac' }), { file: 'a.bacpac', as: 'x' });
   assert.match(parseBackupArgs([], { restore: true, command: 'import-bacpac' }).reason, /\.bacpac\? \/import-bacpac <file>/);
   const out = sqlpackageCommand({ ...conn, trustCert: true }, { database: 'Club', file: '/tmp/c.bacpac', password: 'pw' }, 'linux');
-  assert.equal(out.command, "sqlpackage /Action:Export /SourceServerName:'localhost,1433' /SourceDatabaseName:Club /SourceUser:sa /SourcePassword:pw /SourceEncryptConnection:True /SourceTrustServerCertificate:True /TargetFile:/tmp/c.bacpac /p:CommandTimeout=0");
+  assert.equal(out.command, "sqlpackage /Action:Export /SourceServerName:'localhost,1433' /SourceDatabaseName:Club /SourceUser:sa /SourcePassword:pw /SourceEncryptConnection:True /SourceTrustServerCertificate:True /TargetFile:/tmp/c.bacpac /p:CommandTimeout=0 /p:CompressionOption=Fast /p:VerifyExtraction=False");
   const imp = sqlpackageCommand({ name: 'az', server: 'x.database.windows.net', auth: 'azure-cli' }, { importing: true, database: 'New', file: '/tmp/c.bacpac' }, 'linux');
   assert.match(imp.command, /^sqlpackage \/Action:Import \/SourceFile:\/tmp\/c\.bacpac \/TargetConnectionString:'Data Source=x\.database\.windows\.net;Initial Catalog=New;Authentication=Active Directory Default;Encrypt=True' \/p:CommandTimeout=0$/);
   assert.doesNotMatch(imp.command, /Password/);
