@@ -70,15 +70,29 @@ jobs:
             name: macos-arm64
     name: ${{ matrix.name }}
     runs-on: ${{ matrix.os }}
+    # A build takes under ten minutes; one that hangs mustn't hold the next run (one at a time) for hours.
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
+      # The runners fetch from Azure's Ubuntu mirror, which has stopped answering for half an hour at a
+      # time: apt then waits out its long default timeout on every package in turn. Short timeouts and
+      # retries make that fail in minutes, and Ubuntu's own archive is tried instead.
       - name: The web view's libraries
         if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y libwebkit2gtk-4.1-dev libgtk-3-dev librsvg2-dev libayatana-appindicator3-dev patchelf
+        timeout-minutes: 20
+        run: |
+          pkgs="libwebkit2gtk-4.1-dev libgtk-3-dev librsvg2-dev libayatana-appindicator3-dev patchelf"
+          opts="-o Acquire::Retries=3 -o Acquire::http::Timeout=20 -o Acquire::https::Timeout=20"
+          install() { sudo timeout 300 apt-get $opts update && sudo timeout 600 apt-get $opts install -y $pkgs; }
+          if ! install; then
+            echo "::warning::Azure's Ubuntu mirror didn't answer: installing from archive.ubuntu.com instead."
+            sudo sed -i 's#http://azure.archive.ubuntu.com#http://archive.ubuntu.com#g' /etc/apt/sources.list $(ls /etc/apt/sources.list.d/*.list /etc/apt/sources.list.d/*.sources 2>/dev/null)
+            install
+          fi
       # The runners come with rustup; stable is what the window is built with.
       - run: rustup default stable
       - run: npm ci

@@ -375,6 +375,11 @@ test('many tables on Windows: DacFx in PowerShell, signed in from the environmen
   // Loaded up front, before DacFx, since PowerShell's own resolver would find the stand-in beside DacFx before any handler.
   assert.ok(DACFX_SCRIPT.indexOf("Get-ChildItem -LiteralPath $dir -Filter '*.dll'") < DACFX_SCRIPT.indexOf('[void][System.Reflection.Assembly]::LoadFrom($dac)'));
   assert.match(DACFX_SCRIPT, /SqlClient loaded from: /, 'a failure says which SqlClient it had');
+  // Libraries asked for on DacFx's own threads (connecting) are found by C#: a PowerShell block can't run there.
+  assert.doesNotMatch(DACFX_SCRIPT, /add_AssemblyResolve\(\[System\.ResolveEventHandler\] \{/);
+  assert.match(DACFX_SCRIPT, /AppDomain\.CurrentDomain\.AssemblyResolve \+= \(sender, request\) =>/);
+  assert.ok(DACFX_SCRIPT.indexOf('[TrawlDacLibraries]::Find(') < DACFX_SCRIPT.indexOf('[void][System.Reflection.Assembly]::LoadFrom($dac)'), 'installed before DacFx loads');
+  assert.equal((DACFX_SCRIPT.match(/^'@$/gm) ?? []).length, 2, "both C# here-strings close at a line's start");
   assert.match(DACFX_SCRIPT, /\n'@\n/, "the C# here-string closes at a line's start, as PowerShell needs");
 });
 

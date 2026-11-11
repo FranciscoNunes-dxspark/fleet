@@ -425,12 +425,30 @@ try {
       }
     }
   }
-  [System.AppDomain]::CurrentDomain.add_AssemblyResolve([System.ResolveEventHandler] {
-    param($source, $request)
-    $path = Find-Library (New-Object System.Reflection.AssemblyName($request.Name)).Name
-    if ($path) { return [System.Reflection.Assembly]::LoadFrom($path) }
-    return $null
-  })
+  # What's left is found as it's asked for, often on DacFx's own threads (connecting is one), where a
+  # PowerShell block can't run ("There is no Runspace available"). So the handler is C#, given the
+  # folders to look in, in the order above.
+  $folders = New-Object 'System.Collections.Generic.List[string]'
+  foreach ($rid in @('win-x64', 'win')) { foreach ($dir in (Best-Framework $rid)) { $folders.Add($dir) } }
+  $folders.Add($script:dacDir)
+  Add-Type -TypeDefinition @'
+using System;
+using System.IO;
+using System.Reflection;
+public static class TrawlDacLibraries {
+  public static void Find(string[] folders) {
+    AppDomain.CurrentDomain.AssemblyResolve += (sender, request) => {
+      string name = new AssemblyName(request.Name).Name;
+      foreach (string folder in folders) {
+        string path = Path.Combine(folder, name + ".dll");
+        if (File.Exists(path)) return Assembly.LoadFrom(path);
+      }
+      return null;
+    };
+  }
+}
+'@
+  [TrawlDacLibraries]::Find($folders.ToArray())
   [void][System.Reflection.Assembly]::LoadFrom($dac)
 
   $tables = New-Object 'System.Collections.Generic.List[System.Tuple[string,string]]'
@@ -474,11 +492,15 @@ public static class TrawlDacProgress {
   $services.ExportBacpac($env:TRAWL_DAC_FILE, $env:TRAWL_DAC_DATABASE, $options, $tables, $null)
   [Console]::Out.WriteLine('Exported to ' + $env:TRAWL_DAC_FILE)
 } catch {
-  $top = $_.Exception
-  $inner = $top
-  while ($inner.InnerException) { $inner = $inner.InnerException }
-  [Console]::Error.WriteLine('*** Error exporting database: ' + $top.Message)
-  if ($inner -ne $top) { [Console]::Error.WriteLine($inner.Message) }
+  # Every cause in the chain, not only the first and last: the one that says why is often in between.
+  $e = $_.Exception
+  [Console]::Error.WriteLine('*** Error exporting database: ' + $e.Message)
+  $said = @{ $e.Message = $true }
+  for ($cause = $e.InnerException; $cause; $cause = $cause.InnerException) {
+    if ($said[$cause.Message]) { continue }
+    $said[$cause.Message] = $true
+    [Console]::Error.WriteLine($cause.GetType().Name + ': ' + $cause.Message)
+  }
   if ($script:sqlClient) { [Console]::Error.WriteLine('SqlClient loaded from: ' + (& $script:sqlClient) + '; PowerShell ' + $PSVersionTable.PSVersion + ' on .NET ' + [Environment]::Version) }
   exit 1
 }

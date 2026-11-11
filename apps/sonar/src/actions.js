@@ -1027,7 +1027,7 @@ export async function runQuery(ctx, kql) {
     return { stdout: `${result.rows.length} row${result.rows.length === 1 ? '' : 's'}` };
   }, { label: 'Querying' });
   // A query that ends with `| render …` shows as a chart (v in Logs, or /chart, goes back to the grid).
-  if (done.ok) ctx.setResult({ query: q, component: scope.component, span, ...result, kind: renderKind(q), chart: Boolean(renderKind(q)) && !chartOf(result, renderKind(q)).error });
+  if (done.ok) ctx.setResult({ query: q, component: scope.component, scope, span, ...result, kind: renderKind(q), chart: Boolean(renderKind(q)) && !chartOf(result, renderKind(q)).error });
   if (done.ok) ctx.setConfig((c) => ({ ...c, queries: [q, ...(c.queries ?? []).filter((x) => x !== q)].slice(0, 50) }));
 }
 
