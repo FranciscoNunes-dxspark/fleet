@@ -56,52 +56,83 @@ export class OutputFilter {
       fresh = false;
       if (active) out += bar;
     };
-    for (let i = 0; i < text.length; i++) {
-      const ch = text[i];
-      switch (this.state) {
-        case 'ground':
-          if (ch === ESC) {
-            emit(text.slice(from, i));
-            this.state = 'esc';
-            this.seq = ch;
-          }
+    // Plain text is copied out a run at a time, from one ESC to the next; a sequence's characters are
+    // taken a slice at a time too, and only those that can matter here are read closely (csi). Every
+    // chunk an app writes comes through, on screen or not, so this is what Fleet does most.
+    let i = 0;
+    const n = text.length;
+    while (i < n) {
+      if (this.state === 'ground') {
+        const at = text.indexOf(ESC, i);
+        if (at < 0) {
+          emit(text.slice(from));
+          from = i = n;
           break;
-        case 'esc':
-          this.seq += ch;
-          if (ch === '[') this.state = 'csi';
-          else if (ch === ']' || ch === 'P' || ch === '_' || ch === '^' || ch === 'X') this.state = 'string';
-          else if (ch >= ' ' && ch <= '/') this.state = 'escInter';
-          else this.finish(this.escape(ch), emit, i);
+        }
+        emit(text.slice(from, at));
+        this.state = 'esc';
+        this.seq = ESC;
+        i = at + 1;
+        continue;
+      }
+      if (this.state === 'csi') {
+        // Parameters and intermediates up to the final byte (@ to ~).
+        let end = i;
+        while (end < n) {
+          const c = text.charCodeAt(end);
+          if (c >= 0x40 && c <= 0x7e) break;
+          end++;
+        }
+        if (end === n) {
+          this.seq += text.slice(i);
+          i = n;
           break;
-        case 'escInter':
-          this.seq += ch;
-          if (!(ch >= ' ' && ch <= '/')) this.finish(this.seq, emit, i);
+        }
+        this.seq += text.slice(i, end + 1);
+        i = end;
+        const { endsFrame, seq } = this.csi(this.seq);
+        // The bar goes into the end of the app's frame, so the terminal shows them together.
+        if (endsFrame && bar) emitBar();
+        this.finish(seq, emit);
+        if (endsFrame && bar) fresh = false;
+      } else if (this.state === 'string') {
+        // Up to BEL, or an ESC that may start ST.
+        const bel = text.indexOf('\x07', i);
+        const esc = text.indexOf(ESC, i);
+        const end = bel < 0 ? esc : esc < 0 ? bel : Math.min(bel, esc);
+        if (end < 0) {
+          this.seq += text.slice(i);
+          i = n;
           break;
-        case 'csi':
-          this.seq += ch;
-          if (ch >= '@' && ch <= '~') {
-            const { endsFrame, seq } = this.csi(this.seq);
-            // The bar goes into the end of the app's frame, so the terminal shows them together.
-            if (endsFrame && bar) emitBar();
-            this.finish(seq, emit, i);
-            if (endsFrame && bar) fresh = false;
-          }
-          break;
-        case 'string':
-          this.seq += ch;
-          if (ch === '\x07') this.finish(this.message(this.seq), emit, i);
-          else if (ch === ESC) this.state = 'stringEsc';
-          break;
-        case 'stringEsc':
-          this.seq += ch;
-          if (ch === '\\') this.finish(this.message(this.seq), emit, i);
-          else this.state = ch === ESC ? 'stringEsc' : 'string';
-          break;
+        }
+        this.seq += text.slice(i, end + 1);
+        i = end;
+        if (text[end] === '\x07') this.finish(this.message(this.seq), emit);
+        else this.state = 'stringEsc';
+      } else {
+        const ch = text[i];
+        this.seq += ch;
+        switch (this.state) {
+          case 'esc':
+            if (ch === '[') this.state = 'csi';
+            else if (ch === ']' || ch === 'P' || ch === '_' || ch === '^' || ch === 'X') this.state = 'string';
+            else if (ch >= ' ' && ch <= '/') this.state = 'escInter';
+            else this.finish(this.escape(ch), emit);
+            break;
+          case 'escInter':
+            if (!(ch >= ' ' && ch <= '/')) this.finish(this.seq, emit);
+            break;
+          case 'stringEsc':
+            if (ch === '\\') this.finish(this.message(this.seq), emit);
+            else this.state = ch === ESC ? 'stringEsc' : 'string';
+            break;
+        }
       }
       if (this.state === 'ground' && this.done) {
         from = i + 1;
         this.done = false;
       }
+      i++;
     }
     if (this.state === 'ground') emit(text.slice(from));
     // A whole frame has come and nothing is left open: the bar again, over whatever the frame cleared.
@@ -134,6 +165,10 @@ export class OutputFilter {
 
   // A whole CSI sequence: { seq, endsFrame }, `seq` what goes on to the terminal in its place.
   csi(seq) {
+    // Most are colours and moves, which pass as they are: only a private mode (ESC [ ?) and the title
+    // stack (a final t) are read.
+    const last = seq.charCodeAt(seq.length - 1);
+    if (seq.charCodeAt(2) !== 0x3f && last !== 0x74) return { seq };
     const m = /^\x1b\[\?([\d;]*)([hl])$/.exec(seq);
     if (m) {
       const on = m[2] === 'h';

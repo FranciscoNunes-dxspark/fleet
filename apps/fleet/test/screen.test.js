@@ -58,3 +58,20 @@ test("the app's messages are taken out of its output, whole across reads, on scr
   assert.equal(filter.push('\x1b]5379;{"handoff":"trawl","line":"/x"}\x1b\\', { active: false }), '');
   assert.deepEqual(got, [{ ready: true }, { handoff: 'trawl', line: '/x' }]);
 });
+
+test('a stream comes out the same however its chunks are cut: whole, or split at any point, a sequence waiting for its end', () => {
+  const stream =
+    '\x1b[?2026h\x1b[H\x1b[38;2;10;20;30mred\x1b[0m plain \x1b[?1049h\x1b[?1000;1006h\x1b[22t\x1b]0;title\x07' +
+    '\x1b7saved\x1b8\x1bc\x1b]5379;{"ready":true}\x07wörld 🎉\x1b]8;;http://x\x1b\\link\x1b]8;;\x1b\\\x1b[?25l\x1b[?2026l';
+  const run = (chunks) => {
+    const messages = [];
+    const f = new OutputFilter({ onMessage: (m) => messages.push(m) });
+    const out = chunks.map((c) => f.push(c)).join('');
+    return { out, messages, modes: [...f.modes], sync: f.sync, saved: f.saved };
+  };
+  const whole = run([stream]);
+  assert.ok(whole.out.includes('\x1b[38;2;10;20;30mred'), 'colours pass as they came');
+  assert.ok(!whole.out.includes('1049') && !whole.out.includes('\x1b[22t') && !whole.out.includes('5379'), 'what would break the shared screen is dropped');
+  assert.deepEqual(whole.messages, [{ ready: true }]);
+  for (let cut = 1; cut < stream.length; cut++) assert.deepEqual(run([stream.slice(0, cut), stream.slice(cut)]), whole, `cut at ${cut}`);
+});
