@@ -146,15 +146,24 @@ export function onThisMachine(conn, machine, hostname) {
   return Boolean(me) && (host === me || host.split('.')[0] === me || String(machine ?? '').toLowerCase() === me);
 }
 
-/** /backup's and /restore's arguments (and /export's and /import's, by `command`): { file, as } or { reason }. */
+/**
+ * /backup's and /restore's arguments (and /export-bacpac's and /import-bacpac's, by `command`):
+ * { file, as } or { reason }, and for /export-bacpac `noData`: the tables to leave the data of out,
+ * as given (names or patterns, from one or more --no-data, each a comma-separated list).
+ */
 export function parseBackupArgs(words, { restore = false, command = restore ? 'restore' : 'backup' } = {}) {
-  const out = { file: null, as: null };
-  const usage = restore ? `/${command} <file> [--as <database>]` : `/${command} [file]`;
+  const exporting = command === 'export-bacpac';
+  const out = { file: null, as: null, ...(exporting ? { noData: [] } : {}) };
+  const usage = restore ? `/${command} <file> [--as <database>]` : exporting ? `/${command} [file] [--no-data <table>,…]` : `/${command} [file]`;
   for (let i = 0; i < words.length; i++) {
     const w = words[i];
     if (restore && w === '--as') {
       out.as = words[++i] ?? null;
       if (!out.as) return { reason: '--as names the database to restore into.' };
+    } else if (exporting && w === '--no-data') {
+      const list = (words[++i] ?? '').split(',').map((t) => t.trim()).filter(Boolean);
+      if (!list.length) return { reason: '--no-data names the tables whose data to leave out: dbo.AuditLog, or a pattern such as log.* or *History, several split by commas.' };
+      out.noData.push(...list);
     } else if (w.startsWith('--')) return { reason: `${usage} doesn't take ${w}.` };
     else if (out.file) return { reason: `One file: ${out.file}, then ${w}? Put a path with spaces in quotes.` };
     else out.file = w;
@@ -176,6 +185,44 @@ export function bacpacRefusal(conn, kind, { importing = false } = {}) {
   return null;
 }
 
+/** Whether table `name` ("dbo.AuditLog") is meant by `pattern`: schema.table or a table in any schema, `*` for any run of characters, case aside. */
+export function tableMatches(pattern, name) {
+  const p = String(pattern).replace(/[[\]"]/g, '');
+  const re = (s) => new RegExp(`^${s.split('*').map((x) => x.replace(/[.+?^${}()|\\]/g, '\\$&')).join('.*')}$`, 'i');
+  if (p.includes('.')) return re(p).test(name);
+  return re(p).test(name.slice(name.indexOf('.') + 1));
+}
+
+/**
+ * For /export-bacpac --no-data: SqlPackage can only be told which tables' data to export (TableData),
+ * so the tables `noData` doesn't mean are listed instead. `tables` are "schema.table" names, and
+ * `foreignKeys` schema.js's: a kept table whose rows point into a left-out one is said in `orphans`
+ * ({ from, to }), since its rows would point at nothing and the import would refuse its key.
+ * Returns { keep, skipped, unmatched, orphans }.
+ */
+export function tableDataFor(tables, noData, foreignKeys = []) {
+  const skipped = tables.filter((t) => noData.some((p) => tableMatches(p, t)));
+  const left = new Set(skipped.map((t) => t.toLowerCase()));
+  const keep = tables.filter((t) => !left.has(t.toLowerCase()));
+  const unmatched = noData.filter((p) => !tables.some((t) => tableMatches(p, t)));
+  const seen = new Set();
+  const orphans = [];
+  for (const f of foreignKeys) {
+    const key = `${f.from}>${f.to}`.toLowerCase();
+    if (left.has(f.to.toLowerCase()) && !left.has(f.from.toLowerCase()) && f.from.toLowerCase() !== f.to.toLowerCase() && !seen.has(key)) {
+      seen.add(key);
+      orphans.push({ from: f.from, to: f.to });
+    }
+  }
+  return { keep, skipped, unmatched, orphans };
+}
+
+/** A table name as SqlPackage's TableData takes it: [schema].[table], so a dot or a space in a name can't split it. */
+const tableDataName = (name) => {
+  const i = name.indexOf('.');
+  return [name.slice(0, i), name.slice(i + 1)].map((x) => `[${x.replace(/]/g, ']]')}]`).join('.');
+};
+
 export const SQLPACKAGE_FROM = 'SqlPackage (https://aka.ms/sqlpackage, or `dotnet tool install -g microsoft.sqlpackage`)';
 
 /**
@@ -184,7 +231,7 @@ export const SQLPACKAGE_FROM = 'SqlPackage (https://aka.ms/sqlpackage, or `dotne
  * uses the az sign-in: no secret at all. SqlPackage has no environment variable or stdin for a SQL
  * login's password, so that one is on the command line (visible to this machine's other users).
  */
-export function sqlpackageCommand(conn, { importing = false, database, file, password }, platform = process.platform) {
+export function sqlpackageCommand(conn, { importing = false, database, file, password, tableData = null }, platform = process.platform) {
   const q = (s) => shellArg(s, platform);
   const side = importing ? 'Target' : 'Source';
   const trust = conn.trustCert ? ['True'] : [];
@@ -207,6 +254,8 @@ export function sqlpackageCommand(conn, { importing = false, database, file, pas
   // Normal compression (Fast writes a somewhat bigger file in far less time), and checking the whole
   // schema model again once it has read it (minutes on a big schema; an import checks it anyway).
   if (!importing) options.push('/p:CompressionOption=Fast', '/p:VerifyExtraction=False');
+  // Only these tables' data, when some is left out (every table's schema goes all the same).
+  if (!importing && tableData) options.push(...tableData.map((t) => q(`/p:TableData=${tableDataName(t)}`)));
   const parts = importing ? ['sqlpackage', '/Action:Import', `/SourceFile:${q(file)}`, ...where, ...options] : ['sqlpackage', '/Action:Export', ...where, `/TargetFile:${q(file)}`, ...options];
   return { command: parts.join(' '), env: {} };
 }

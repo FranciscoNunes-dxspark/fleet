@@ -9,7 +9,7 @@ import { join } from 'node:path';
 import React from 'react';
 import { render } from 'ink-testing-library';
 import { DEMO_CONNECTIONS } from '../src/connections.js';
-import { backupPath, backupRefusal, bacpacRefusal, sqlpackageCommand, toolFailure, dumpCommand, isAzureSqlDatabase, loadCommand, notInstalled, onThisMachine, parseBackupArgs, restoreMoves, restoreSql, serverJoin, shellArg, stamp } from '../src/backup.js';
+import { backupPath, backupRefusal, bacpacRefusal, sqlpackageCommand, toolFailure, dumpCommand, isAzureSqlDatabase, loadCommand, notInstalled, onThisMachine, parseBackupArgs, restoreMoves, restoreSql, serverJoin, shellArg, stamp, tableDataFor, tableMatches } from '../src/backup.js';
 import * as a from '../src/actions.js';
 import { App } from '../src/ui/App.jsx';
 
@@ -264,6 +264,77 @@ test('.bacpac: refusals, and SqlPackage command lines', () => {
   const imp = sqlpackageCommand({ name: 'az', server: 'x.database.windows.net', auth: 'azure-cli' }, { importing: true, database: 'New', file: '/tmp/c.bacpac' }, 'linux');
   assert.match(imp.command, /^sqlpackage \/Action:Import \/SourceFile:\/tmp\/c\.bacpac \/TargetConnectionString:'Data Source=x\.database\.windows\.net;Initial Catalog=New;Authentication=Active Directory Default;Encrypt=True' \/p:CommandTimeout=0$/);
   assert.doesNotMatch(imp.command, /Password/);
+});
+
+test('/export-bacpac --no-data: names and patterns, the tables kept as TableData, what a left-out table leaves pointing at nothing', () => {
+  const args = parseBackupArgs(['out.bacpac', '--no-data', 'dbo.AuditLog,log.*', '--no-data', '*History'], { command: 'export-bacpac' });
+  assert.deepEqual(args, { file: 'out.bacpac', as: null, noData: ['dbo.AuditLog', 'log.*', '*History'] });
+  assert.match(parseBackupArgs(['--no-data'], { command: 'export-bacpac' }).reason, /--no-data names the tables/);
+  assert.match(parseBackupArgs(['--no-data', 'x']).reason, /doesn't take --no-data/, 'only an export takes it');
+
+  assert.ok(tableMatches('auditlog', 'dbo.AuditLog'), 'a table in any schema, case aside');
+  assert.ok(tableMatches('[dbo].[AuditLog]', 'dbo.AuditLog'));
+  assert.ok(tableMatches('log.*', 'log.Events') && !tableMatches('log.*', 'dbo.log'));
+  assert.ok(!tableMatches('dbo.Audit', 'dbo.AuditLog'), 'a whole name, not its start');
+  assert.ok(tableMatches('dbo.Order.Lines', 'dbo.Order.Lines'), 'a dot is a dot');
+
+  const tables = ['dbo.Clubs', 'dbo.Players', 'dbo.AuditLog', 'dbo.OrderHistory', 'log.Events', 'log.Errors'];
+  const fks = [
+    { from: 'dbo.Players', to: 'dbo.Clubs' },
+    { from: 'dbo.AuditLog', to: 'dbo.Players' },
+    { from: 'log.Errors', to: 'log.Events' },
+    { from: 'dbo.OrderHistory', to: 'dbo.OrderHistory' },
+  ];
+  const data = tableDataFor(tables, args.noData, fks);
+  assert.deepEqual(data.keep, ['dbo.Clubs', 'dbo.Players']);
+  assert.deepEqual(data.skipped, ['dbo.AuditLog', 'dbo.OrderHistory', 'log.Events', 'log.Errors']);
+  assert.deepEqual(data.unmatched, []);
+  assert.deepEqual(data.orphans, [], 'tables left out together, or pointing at themselves, leave nothing behind');
+  assert.deepEqual(tableDataFor(tables, ['dbo.Clubs', 'nope.*']).unmatched, ['nope.*']);
+  assert.deepEqual(tableDataFor(tables, ['Clubs'], fks).orphans, [{ from: 'dbo.Players', to: 'dbo.Clubs' }]);
+
+  const conn = { name: 'dev', server: 'localhost', user: 'sa' };
+  const out = sqlpackageCommand(conn, { database: 'Club', file: '/tmp/c.bacpac', password: 'pw', tableData: ['dbo.Clubs', "dbo.Odd ]name's"] }, 'linux');
+  assert.match(out.command, / '\/p:TableData=\[dbo\]\.\[Clubs\]' '\/p:TableData=\[dbo\]\.\[Odd \]\]name'\\''s\]'$/);
+  assert.match(sqlpackageCommand(conn, { database: 'Club', file: 'c.bacpac', tableData: ['dbo.Clubs'] }, 'win32').command, / "\/p:TableData=\[dbo\]\.\[Clubs\]"$/);
+  assert.doesNotMatch(sqlpackageCommand(conn, { importing: true, database: 'Club', file: 'c.bacpac', tableData: ['dbo.Clubs'] }, 'linux').command, /TableData/, 'not on an import');
+});
+
+test('/export-bacpac --no-data on SQL Server: the other tables named to SqlPackage, a key left pointing at nothing said, a name that matches nothing refused', async () => {
+  const conn = { name: 'club', server: 'db.local', user: 'sa' };
+  const table = (schema, name) => ({ schema, name, kind: 'table', columns: [] });
+  const schema = {
+    database: 'shop',
+    databases: ['shop'],
+    objects: [table('dbo', 'Clubs'), table('dbo', 'Players'), table('dbo', 'AuditLog'), { schema: 'dbo', name: 'Recent', kind: 'view', columns: [] }],
+    foreignKeys: [{ name: 'FK_Players_Clubs', from: 'dbo.Players', to: 'dbo.Clubs', columns: [] }],
+  };
+  const ctx = fakeCtx(conn);
+  ctx.schema = schema;
+  await a.exportBacpac(ctx, `${JSON.stringify(join(base, 'c.bacpac'))} --no-data AuditLog`);
+  assert.equal(ctx.ran.length, 1);
+  const tableData = [...ctx.ran[0].command.matchAll(/TableData=\[(\w+)\]\.\[(\w+)\]/g)].map((m) => `${m[1]}.${m[2]}`);
+  assert.deepEqual(tableData, ['dbo.Clubs', 'dbo.Players'], 'every table but the one left out, and no view');
+  assert.ok(ctx.notes.some((n) => /Leaving out the data of dbo\.AuditLog \(their schema stays\)/.test(n.text)));
+  assert.match(ctx.notes.at(-1).text, /Exported shop to .*c\.bacpac\. Without the data of dbo\.AuditLog\./);
+
+  const orphan = fakeCtx(conn);
+  orphan.schema = schema;
+  await a.exportBacpac(orphan, '--no-data dbo.Clubs');
+  assert.ok(orphan.notes.some((n) => /dbo\.Players points into dbo\.Clubs: its rows will point at rows that aren't there/.test(n.text) && n.kind !== 'error'));
+  assert.equal(orphan.ran.length, 1, 'said, and exported all the same');
+
+  for (const [rest, said] of [['--no-data Nope', /No table in shop is Nope/], ['--no-data *', /every table's data/]]) {
+    const refused = fakeCtx(conn);
+    refused.schema = schema;
+    await a.exportBacpac(refused, rest);
+    assert.equal(refused.ran.length, 0);
+    assert.match(refused.notes.at(-1).text, said);
+  }
+  const unread = fakeCtx(conn);
+  unread.schema = null;
+  await a.exportBacpac(unread, '--no-data AuditLog');
+  assert.match(unread.notes.at(-1).text, /hasn't read shop's tables yet/);
 });
 
 test('toolFailure keeps SqlPackage\'s cause, not its first line, and says what to do when the connection dropped', () => {
