@@ -203,6 +203,10 @@ export function sqlpackageCommand(conn, { importing = false, database, file, pas
   // SqlPackage gives each query 60 seconds by default, and a timeout breaks its connection: an export reading a
   // big table (or an import building its index) on a slow server then fails with the connection closed. esc cancels.
   const options = ['/p:CommandTimeout=0'];
+  // An export spends most of its time on two things it can do without: zipping the table data at
+  // Normal compression (Fast writes a somewhat bigger file in far less time), and checking the whole
+  // schema model again once it has read it (minutes on a big schema; an import checks it anyway).
+  if (!importing) options.push('/p:CompressionOption=Fast', '/p:VerifyExtraction=False');
   const parts = importing ? ['sqlpackage', '/Action:Import', `/SourceFile:${q(file)}`, ...where, ...options] : ['sqlpackage', '/Action:Export', ...where, `/TargetFile:${q(file)}`, ...options];
   return { command: parts.join(' '), env: {} };
 }
