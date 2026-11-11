@@ -252,8 +252,38 @@ kbd {
 
 .caption button {
   width: 46px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   color: var(--dim);
+  transition: background-color 80ms, color 80ms;
 }
+
+/* Drawn rather than typed: ─ □ ✕ come from different fonts at different sizes and heights, so the
+   three never lined up. A 10px icon with a 1px stroke, as Windows' own buttons have. */
+.caption svg {
+  width: 10px;
+  height: 10px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1;
+  shape-rendering: crispEdges;
+  pointer-events: none;
+}
+
+.caption .close-window svg {
+  shape-rendering: geometricPrecision;
+}
+
+.caption .restore,
+body.maximised .caption .maximise {
+  display: none;
+}
+
+body.maximised .caption .restore {
+  display: block;
+}
+
 
 .caption button:hover {
   color: var(--bright);
@@ -263,6 +293,15 @@ kbd {
 .caption .close-window:hover {
   color: #fff;
   background: #c42b1c;
+}
+
+.caption button:active {
+  background: var(--selected);
+}
+
+.caption .close-window:active {
+  color: #fff;
+  background: #94251a;
 }
 
 /* The production environment: the frame turns red, as the apps' own lines do. */
