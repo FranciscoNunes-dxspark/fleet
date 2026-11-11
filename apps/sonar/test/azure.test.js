@@ -4,7 +4,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { getEventListeners } from 'node:events';
 import { alertFrom, alertRange, createAzure, retryAfter, deploymentFrom, sqlServerFrom, kindOf, label, readLines, siteFrom, xmlError } from '../src/azure/arm.js';
-import { token } from '../src/azure/az.js';
+import { currentSubscription, profileSubscription, token } from '../src/azure/az.js';
 import { demoAzure, demoQuery } from '../src/demo.js';
 import { TIMESPANS, availabilityQuery, cellText, completeQuery, hailRequest, componentFor, isProduction, looksSecret, problemsQuery, records, settingsDiff, sparklines, starterQuery, trendQuery } from '../src/insights.js';
 import { loadSubscription } from '../src/load.js';
@@ -133,6 +133,50 @@ test('loading: the subscription az has selected is asked for while the list is r
   order.length = 0;
   assert.equal((await loadSubscription(provider, 'A')).subscription.id, 'a');
   assert.ok(!order.includes('current'), 'not asked when one is named');
+});
+
+test('loading: a known id has its resources asked for beside the list, and the apps show before the slow kinds', async () => {
+  const id = '11111111-2222-3333-4444-555555555555';
+  const order = [];
+  let release;
+  const slow = new Promise((r) => (release = r));
+  const provider = {
+    subscriptions: async () => (order.push('list'), await new Promise((r) => setTimeout(r, 20)), order.push('listed'), [{ id, name: 'Prod' }]),
+    apps: async (sub) => (order.push(`apps ${sub}`), [{ id: '/a/web', name: 'web', resourceGroup: 'rg' }]),
+    components: async () => [],
+    cosmosAccounts: async () => (await slow, [{ id: 'c', name: 'cosmos' }]),
+    slots: async () => [],
+  };
+  const seen = [];
+  const loading = loadSubscription(provider, id, { onProgress: (d) => seen.push(d), every: 0 });
+  await new Promise((r) => setTimeout(r, 40));
+  assert.ok(order.indexOf(`apps ${id}`) < order.indexOf('listed'), order.join(' '));
+  assert.deepEqual(seen.at(-1)?.apps.map((a) => a.name), ['web'], 'the apps are on screen while Cosmos DB is still listing');
+  assert.deepEqual(seen.at(-1).cosmos, []);
+  release();
+  const d = await loading;
+  assert.deepEqual(d.cosmos.map((c) => c.name), ['cosmos']);
+
+  // A name waits for the list; an id the list doesn't have falls back to the first, read again.
+  order.length = 0;
+  await loadSubscription(provider, 'Prod');
+  assert.ok(order.indexOf('listed') < order.indexOf(`apps ${id}`), order.join(' '));
+  order.length = 0;
+  const other = '99999999-2222-3333-4444-555555555555';
+  assert.equal((await loadSubscription(provider, other)).subscription.id, id);
+  assert.ok(order.includes(`apps ${other}`) && order.includes(`apps ${id}`), order.join(' '));
+});
+
+test("az: the selected subscription from az's profile file (with its byte order mark), az asked only without one", async () => {
+  const file = '\uFEFF' + JSON.stringify({ subscriptions: [{ id: 'a', name: 'A', isDefault: false }, { id: 'b', name: 'B', isDefault: true }] });
+  assert.deepEqual(profileSubscription({ dir: '/x', read: () => file }), { id: 'b', name: 'B' });
+  assert.equal(profileSubscription({ dir: '/x', read: () => { throw new Error('ENOENT'); } }), null);
+  let asked = 0;
+  const runner = async () => (asked++, { stdout: JSON.stringify({ id: 'c', name: 'C' }) });
+  assert.deepEqual(await currentSubscription({ runner, profile: () => ({ id: 'b', name: 'B' }) }), { id: 'b', name: 'B' });
+  assert.equal(asked, 0);
+  assert.deepEqual(await currentSubscription({ runner, profile: () => null }), { id: 'c', name: 'C' });
+  assert.equal(asked, 1);
 });
 
 test('a throttled call (429) is tried again after Retry-After, up to three times', async () => {

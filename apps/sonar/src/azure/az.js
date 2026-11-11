@@ -1,5 +1,8 @@
 // The Azure CLI's sign-in, which is all Sonar uses: tokens come from `az account get-access-token`,
 // as Trawl and Keel get theirs, so Sonar never sees a password or keeps a secret.
+import { readFileSync } from 'node:fs';
+import { homedir } from 'node:os';
+import { join } from 'node:path';
 import { run } from '@fleet/kit/run.js';
 
 // Tokens last about an hour; one is used until five minutes before it runs out.
@@ -39,8 +42,25 @@ export async function token(resource, { now = Date.now(), runner } = {}) {
   return p;
 }
 
-/** The subscription `az` has selected (az account set), to start on: { id, name }. */
-export async function currentSubscription({ runner } = {}) {
+/**
+ * The subscription az has selected, from its own profile file (AZURE_CONFIG_DIR, else ~/.azure), or
+ * null. Reading it is instant, where `az account show` is a whole Python start, seconds on Windows.
+ */
+export function profileSubscription({ dir = process.env.AZURE_CONFIG_DIR || join(homedir(), '.azure'), read = readFileSync } = {}) {
+  try {
+    // az writes it with a byte order mark.
+    const profile = JSON.parse(String(read(join(dir, 'azureProfile.json'), 'utf8')).replace(/^\uFEFF/, ''));
+    const sub = (profile?.subscriptions ?? []).find((s) => s.isDefault);
+    return sub?.id ? { id: sub.id, name: sub.name } : null;
+  } catch {
+    return null;
+  }
+}
+
+/** The subscription `az` has selected (az account set), to start on: { id, name }; az is asked only when its profile can't say. */
+export async function currentSubscription({ runner, profile = profileSubscription } = {}) {
+  const known = profile();
+  if (known) return known;
   const out = await az('account show --query "{id:id,name:name}"', { runner });
   return out?.id ? out : null;
 }
