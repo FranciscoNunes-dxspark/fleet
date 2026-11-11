@@ -384,11 +384,32 @@ try {
   $script:dacDir = Split-Path -Parent $dac
   $env:PATH = (Join-Path $script:dacDir 'runtimes\win-x64\native') + ';' + $script:dacDir + ';' + $env:PATH
   [System.AppContext]::SetSwitch('Switch.Microsoft.Data.SqlClient.UseManagedNetworkingOnWindows', $true)
+  # A library with a build per system keeps the real one under runtimes\<rid>\lib\<framework>, and a
+  # stand-in at the top of the folder that only says "not supported on this platform" (SqlClient
+  # does). SqlPackage's own .deps.json picks the right one; here it's looked for in the same order:
+  # Windows x64's, then Windows', the newest framework this PowerShell runs, then the top.
+  $script:runtimeMajor = [Environment]::Version.Major
+  function script:Find-Library([string] $name) {
+    foreach ($rid in @('win-x64', 'win')) {
+      $lib = Join-Path $script:dacDir (Join-Path 'runtimes' (Join-Path $rid 'lib'))
+      if (-not (Test-Path -LiteralPath $lib)) { continue }
+      $frameworks = Get-ChildItem -LiteralPath $lib -Directory | ForEach-Object {
+        $m = [regex]::Match($_.Name, '^net(\d+)\.\d+$')
+        [pscustomobject]@{ Dir = $_.FullName; Major = $(if ($m.Success) { [int]$m.Groups[1].Value } else { 0 }) }
+      } | Where-Object { $_.Major -le $script:runtimeMajor } | Sort-Object Major -Descending
+      foreach ($framework in $frameworks) {
+        $path = Join-Path $framework.Dir ($name + '.dll')
+        if (Test-Path -LiteralPath $path) { return $path }
+      }
+    }
+    $path = Join-Path $script:dacDir ($name + '.dll')
+    if (Test-Path -LiteralPath $path) { return $path }
+    return $null
+  }
   [System.AppDomain]::CurrentDomain.add_AssemblyResolve([System.ResolveEventHandler] {
     param($source, $request)
-    $name = (New-Object System.Reflection.AssemblyName($request.Name)).Name
-    $path = Join-Path $script:dacDir ($name + '.dll')
-    if (Test-Path -LiteralPath $path) { return [System.Reflection.Assembly]::LoadFrom($path) }
+    $path = Find-Library (New-Object System.Reflection.AssemblyName($request.Name)).Name
+    if ($path) { return [System.Reflection.Assembly]::LoadFrom($path) }
     return $null
   })
   [void][System.Reflection.Assembly]::LoadFrom($dac)
