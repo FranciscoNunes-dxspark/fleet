@@ -289,7 +289,7 @@ export function toolFailure(tool, e, { server } = {}) {
 /** Whether SqlPackage's command line is too long for the shell run.js starts it through. */
 export const tooLongForShell = (command, platform = process.platform) => platform === 'win32' && command.length > 8000;
 
-export const POWERSHELL_FROM = 'PowerShell 7 (https://aka.ms/powershell): the export of many tables goes through it on Windows';
+export const POWERSHELL_FROM = 'PowerShell 7 (https://aka.ms/powershell), which the export of many tables goes through on Windows. Trawl looked on PATH, in Program Files\\PowerShell\\7, the Microsoft Store\'s and the dotnet tools\'';
 
 /** A value for a SqlClient connection string: quoted when it has to be (a ; or a quote in a password). */
 const csValue = (v) => {
@@ -327,8 +327,29 @@ export const tableListText = (tables) =>
  * with the connection string, so none of it is on a command line; `script` and `list` are the files
  * DACFX_SCRIPT and tableListText were written to.
  */
-export function dacfxCommand(conn, { database, file, password, script, list }, platform = process.platform) {
-  const command = ['pwsh', '-NoLogo', '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', shellArg(script, platform)].join(' ');
+/**
+ * Where PowerShell 7 is: on PATH, else where its installers put it. PATH alone isn't enough: a program
+ * keeps the PATH it started with, so a Trawl (or a Fleet window running it) opened before PowerShell
+ * was installed wouldn't find it until restarted. `exists` is injected for the tests; "pwsh" when
+ * none is found, for the shell to say it isn't there.
+ */
+export function findPwsh(env = process.env, exists = () => false, platform = process.platform) {
+  if (platform !== 'win32') return 'pwsh';
+  const get = (name) => env[name] ?? env[Object.keys(env).find((k) => k.toLowerCase() === name.toLowerCase())];
+  const join = (...parts) => parts.join('\\').replace(/\\+/g, '\\');
+  const candidates = [
+    ...String(get('PATH') ?? '').split(';').filter(Boolean).map((dir) => join(dir.replace(/"/g, ''), 'pwsh.exe')),
+    // The MSI and winget's install, for every user; a preview beside it.
+    ...['ProgramFiles', 'ProgramW6432'].filter(get).flatMap((pf) => [join(get(pf), 'PowerShell', '7', 'pwsh.exe'), join(get(pf), 'PowerShell', '7-preview', 'pwsh.exe')]),
+    // The Microsoft Store's, and `dotnet tool install --global PowerShell`.
+    ...(get('LOCALAPPDATA') ? [join(get('LOCALAPPDATA'), 'Microsoft', 'WindowsApps', 'pwsh.exe')] : []),
+    ...(get('USERPROFILE') ? [join(get('USERPROFILE'), '.dotnet', 'tools', 'pwsh.exe')] : []),
+  ];
+  return candidates.find((c) => exists(c)) ?? 'pwsh';
+}
+
+export function dacfxCommand(conn, { database, file, password, script, list, pwsh = 'pwsh' }, platform = process.platform) {
+  const command = [pwsh === 'pwsh' ? 'pwsh' : shellArg(pwsh, platform), '-NoLogo', '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', shellArg(script, platform)].join(' ');
   return {
     command,
     env: { TRAWL_DAC_CONNECTION: dacfxConnectionString(conn, { database, password }), TRAWL_DAC_DATABASE: database, TRAWL_DAC_FILE: file, TRAWL_DAC_TABLES: list },

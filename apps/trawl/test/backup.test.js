@@ -9,7 +9,7 @@ import { dirname, join } from 'node:path';
 import React from 'react';
 import { render } from 'ink-testing-library';
 import { DEMO_CONNECTIONS } from '../src/connections.js';
-import { backupPath, backupRefusal, bacpacRefusal, sqlpackageCommand, toolFailure, dumpCommand, isAzureSqlDatabase, loadCommand, notInstalled, onThisMachine, parseBackupArgs, restoreMoves, restoreSql, serverJoin, shellArg, stamp, tableDataFor, tableMatches, DACFX_SCRIPT, dacfxCommand, dacfxConnectionString, tableListText, tooLongForShell } from '../src/backup.js';
+import { backupPath, backupRefusal, bacpacRefusal, sqlpackageCommand, toolFailure, dumpCommand, isAzureSqlDatabase, loadCommand, notInstalled, onThisMachine, parseBackupArgs, restoreMoves, restoreSql, serverJoin, shellArg, stamp, tableDataFor, tableMatches, DACFX_SCRIPT, dacfxCommand, dacfxConnectionString, findPwsh, tableListText, tooLongForShell } from '../src/backup.js';
 import * as a from '../src/actions.js';
 import { App } from '../src/ui/App.jsx';
 
@@ -349,6 +349,16 @@ test('many tables on Windows: DacFx in PowerShell, signed in from the environmen
 
   assert.equal(tableListText(['dbo.Clubs', 'dbo.Order.Lines']), 'dbo\tClubs\ndbo\tOrder.Lines', 'split at the first dot only');
 
+  // PowerShell 7 found where it's installed, even when the PATH this Trawl started with predates it.
+  const env = { Path: 'C:\\Windows\\system32', ProgramFiles: 'C:\\Program Files', LOCALAPPDATA: 'C:\\Users\\me\\AppData\\Local' };
+  const at = (...have) => (p) => have.includes(p);
+  assert.equal(findPwsh(env, at('C:\\Program Files\\PowerShell\\7\\pwsh.exe'), 'win32'), 'C:\\Program Files\\PowerShell\\7\\pwsh.exe');
+  assert.equal(findPwsh({ ...env, Path: 'C:\\Windows\\system32;C:\\Tools\\' }, at('C:\\Tools\\pwsh.exe', 'C:\\Program Files\\PowerShell\\7\\pwsh.exe'), 'win32'), 'C:\\Tools\\pwsh.exe', 'PATH first');
+  assert.equal(findPwsh(env, at('C:\\Users\\me\\AppData\\Local\\Microsoft\\WindowsApps\\pwsh.exe'), 'win32'), 'C:\\Users\\me\\AppData\\Local\\Microsoft\\WindowsApps\\pwsh.exe', "the Store's");
+  assert.equal(findPwsh(env, at(), 'win32'), 'pwsh', 'none: the shell says so');
+  assert.equal(findPwsh(env, () => true, 'linux'), 'pwsh');
+  assert.match(dacfxCommand({ server: 'db' }, { database: 'Shop', file: 'f', script: 's.ps1', list: 'l', pwsh: 'C:\\Program Files\\PowerShell\\7\\pwsh.exe' }, 'win32').command, /^"C:\\Program Files\\PowerShell\\7\\pwsh\.exe" -NoLogo /);
+
   const run = dacfxCommand({ server: 'db', user: 'sa' }, { database: 'Shop', file: 'C:\\out\\s.bacpac', password: 's3cret', script: 'C:\\Temp\\trawl x\\export.ps1', list: 'C:\\Temp\\trawl x\\tables.txt' }, 'win32');
   assert.equal(run.command, 'pwsh -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "C:\\Temp\\trawl x\\export.ps1"');
   assert.doesNotMatch(run.command, /s3cret/, 'the password is never on the command line');
@@ -377,7 +387,8 @@ test('/export-bacpac --no-data with more tables than Windows can name goes throu
   };
   await a.exportBacpac(ctx, `${JSON.stringify(join(base, 'big.bacpac'))} --no-data *AuditLogs`);
   assert.equal(ctx.ran.length, 1);
-  assert.match(ctx.ran[0].command, /^pwsh .* -File "?\S+export\.ps1"?$/);
+  // pwsh, or its full path where this machine has it installed (GitHub's Windows runners do).
+  assert.match(ctx.ran[0].command, /^(pwsh|"[^"]*pwsh\.exe") -NoLogo .* -File "?\S+export\.ps1"?$/);
   assert.equal(ctx.ran[0].env.TRAWL_DAC_DATABASE, 'shop');
   assert.match(ctx.ran[0].env.TRAWL_DAC_CONNECTION, /Password=s3cret/);
   assert.equal(listed.length, 1200);
