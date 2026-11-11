@@ -3,13 +3,13 @@
 // SQL Server path end to end (helpers copied from app.test.js).
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import React from 'react';
 import { render } from 'ink-testing-library';
 import { DEMO_CONNECTIONS } from '../src/connections.js';
-import { backupPath, backupRefusal, bacpacRefusal, sqlpackageCommand, toolFailure, dumpCommand, isAzureSqlDatabase, loadCommand, notInstalled, onThisMachine, parseBackupArgs, restoreMoves, restoreSql, serverJoin, shellArg, stamp, tableDataFor, tableMatches } from '../src/backup.js';
+import { backupPath, backupRefusal, bacpacRefusal, sqlpackageCommand, toolFailure, dumpCommand, isAzureSqlDatabase, loadCommand, notInstalled, onThisMachine, parseBackupArgs, restoreMoves, restoreSql, serverJoin, shellArg, stamp, tableDataFor, tableMatches, DACFX_SCRIPT, dacfxCommand, dacfxConnectionString, tableListText, tooLongForShell } from '../src/backup.js';
 import * as a from '../src/actions.js';
 import { App } from '../src/ui/App.jsx';
 
@@ -335,6 +335,63 @@ test('/export-bacpac --no-data on SQL Server: the other tables named to SqlPacka
   unread.schema = null;
   await a.exportBacpac(unread, '--no-data AuditLog');
   assert.match(unread.notes.at(-1).text, /hasn't read shop's tables yet/);
+});
+
+test('many tables on Windows: DacFx in PowerShell, signed in from the environment, the tables from a file', () => {
+  assert.equal(tooLongForShell('x'.repeat(8001), 'win32'), true);
+  assert.equal(tooLongForShell('x'.repeat(8001), 'linux'), false, 'only cmd.exe is that short');
+  assert.equal(tooLongForShell('x'.repeat(100), 'win32'), false);
+
+  assert.equal(dacfxConnectionString({ server: 'db,1433', user: 'sa', trustCert: true }, { database: 'Shop', password: 'p;w"d' }), 'Data Source=db,1433;Initial Catalog=Shop;User ID=sa;Password="p;w""d";Encrypt=True;TrustServerCertificate=True');
+  assert.equal(dacfxConnectionString({ server: 'x.database.windows.net', auth: 'azure-cli' }, { database: 'Shop' }), 'Data Source=x.database.windows.net;Initial Catalog=Shop;Authentication=Active Directory Default;Encrypt=True');
+  assert.equal(dacfxConnectionString({ server: 'db', encrypt: false }, { database: 'Shop' }), 'Data Source=db;Initial Catalog=Shop;Integrated Security=True;Encrypt=False', "no login: Windows' own sign-in");
+  assert.match(dacfxConnectionString({ server: 'db', user: 'me', auth: 'ntlm', domain: 'CORP' }, { database: 'Shop', password: 'x' }), /User ID=CORP\\me;Password=x/);
+
+  assert.equal(tableListText(['dbo.Clubs', 'dbo.Order.Lines']), 'dbo\tClubs\ndbo\tOrder.Lines', 'split at the first dot only');
+
+  const run = dacfxCommand({ server: 'db', user: 'sa' }, { database: 'Shop', file: 'C:\\out\\s.bacpac', password: 's3cret', script: 'C:\\Temp\\trawl x\\export.ps1', list: 'C:\\Temp\\trawl x\\tables.txt' }, 'win32');
+  assert.equal(run.command, 'pwsh -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "C:\\Temp\\trawl x\\export.ps1"');
+  assert.doesNotMatch(run.command, /s3cret/, 'the password is never on the command line');
+  assert.match(run.env.TRAWL_DAC_CONNECTION, /Password=s3cret/);
+  // Every variable the script reads is one Trawl sets (TRAWL_DACFX is the user's own, to point at the library).
+  const read = new Set([...DACFX_SCRIPT.matchAll(/\$env:(TRAWL_\w+)/g)].map((m) => m[1]));
+  assert.deepEqual([...read].filter((v) => v !== 'TRAWL_DACFX').sort(), Object.keys(run.env).sort());
+  assert.match(DACFX_SCRIPT, /\.ExportBacpac\(\$env:TRAWL_DAC_FILE, \$env:TRAWL_DAC_DATABASE, \$options, \$tables, \$null\)/);
+  assert.match(DACFX_SCRIPT, /runtimes\\win-x64\\native/, 'backslashes kept');
+  assert.match(DACFX_SCRIPT, /\n'@\n/, "the C# here-string closes at a line's start, as PowerShell needs");
+});
+
+test('/export-bacpac --no-data with more tables than Windows can name goes through DacFx, and leaves no file behind', async () => {
+  const conn = { name: 'big', server: 'db.local', user: 'sa' };
+  const objects = Array.from({ length: 1200 }, (_, i) => ({ schema: 'dbo', name: `SomeRatherLongTableName${i}`, kind: 'table', columns: [] }));
+  objects.push({ schema: 'audit', name: 'AuditLogs', kind: 'table', columns: [] });
+  const ctx = fakeCtx(conn);
+  ctx.schema = { database: 'shop', databases: ['shop'], objects, foreignKeys: [] };
+  ctx.platform = 'win32';
+  let listed = null;
+  const runProgram = ctx.runProgram;
+  ctx.runProgram = async (command, opts) => {
+    listed = readFileSync(opts.env.TRAWL_DAC_TABLES, 'utf8').split('\n');
+    assert.ok(existsSync(opts.env.TRAWL_DAC_TABLES));
+    return runProgram(command, opts);
+  };
+  await a.exportBacpac(ctx, `${JSON.stringify(join(base, 'big.bacpac'))} --no-data *AuditLogs`);
+  assert.equal(ctx.ran.length, 1);
+  assert.match(ctx.ran[0].command, /^pwsh .* -File "?\S+export\.ps1"?$/);
+  assert.equal(ctx.ran[0].env.TRAWL_DAC_DATABASE, 'shop');
+  assert.match(ctx.ran[0].env.TRAWL_DAC_CONNECTION, /Password=s3cret/);
+  assert.equal(listed.length, 1200);
+  assert.ok(!listed.includes('audit\tAuditLogs'), 'the table left out is not in the list');
+  assert.ok(!existsSync(dirname(ctx.ran[0].env.TRAWL_DAC_TABLES)), 'the list and the script are removed');
+  assert.ok(ctx.notes.some((n) => /1200 tables are too many to name on Windows' command line.*DacFx/.test(n.text)));
+  assert.match(ctx.notes.at(-1).text, /Exported shop to .*big\.bacpac\. Without the data of audit\.AuditLogs\./);
+
+  // The same on Linux: SqlPackage's own command line takes them.
+  const linux = fakeCtx(conn);
+  linux.schema = ctx.schema;
+  linux.platform = 'linux';
+  await a.exportBacpac(linux, '--no-data *AuditLogs');
+  assert.match(linux.ran[0].command, /^sqlpackage \/Action:Export/);
 });
 
 test('toolFailure keeps SqlPackage\'s cause, not its first line, and says what to do when the connection dropped', () => {
