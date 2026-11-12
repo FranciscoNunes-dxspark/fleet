@@ -3,27 +3,7 @@ import { Text, useInput } from 'ink';
 import { theme } from '../theme.js';
 import { useMouse } from '@fleet/kit/ui/hooks.js';
 import { Panel, Row } from '@fleet/kit/ui/parts.jsx';
-
-/**
- * The lines the Console draws: the scrollback and the screen of the shell's virtual terminal (@fleet/kit/vt.js) as
- * ANSI text, the `height` ones that end `back` lines above the bottom, with the cursor (a reversed cell) when
- * `cursor` says it is showing. Rows past what the terminal has are left out.
- */
-export function consoleLines(vt, { height, back = 0, cursor = false }) {
-  const kept = vt.history.length;
-  const total = kept + vt.rows;
-  const end = Math.max(0, total - back);
-  const start = Math.max(0, end - height);
-  const lines = [];
-  for (let i = start; i < end; i++) {
-    if (i < kept) lines.push(vt.historyAnsi(i));
-    else lines.push(vt.rowAnsi(i - kept, cursor && back === 0 && i - kept === vt.y && vt.cursorShown() ? vt.x : -1));
-  }
-  return lines;
-}
-
-/** The screen as plain text (what y copies): the rows without trailing blanks, and no blank rows at the end. */
-export const screenText = (vt) => Array.from({ length: vt.rows }, (_, y) => vt.rowText(y)).join('\n').replace(/\s+$/, '');
+import { screenLines, screenText } from '@fleet/kit/vt.js';
 
 /**
  * A shell on the server with a terminal (`terminal` is terminal.js's, or null before there is one). While `typing`
@@ -58,7 +38,7 @@ export function ConsoleView({ terminal, ended, conn, ctx, width, height, active,
       : ended
         ? `${where} · shell ended${ended.code ? ` (exit ${ended.code})` : ''} · ↵ starts a new one`
         : `${where} · ↵ type in it · ↑↓ look back · y copy the screen`;
-  const lines = terminal ? consoleLines(terminal.vt, { height: innerH, back, cursor: typing }) : [];
+  const lines = terminal ? screenLines(terminal.vt, { height: innerH, back, cursor: typing }) : [];
   return (
     <Panel title="Console" hint={hint} width={width} height={height} focused={active || typing}>
       {!terminal ? (

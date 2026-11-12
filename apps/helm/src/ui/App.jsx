@@ -1,27 +1,26 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Box, useApp, useInput } from 'ink';
-import { readFileSync, writeFileSync } from 'node:fs';
-import { basename, resolve } from 'node:path';
+import { Box, Text, useApp, useInput } from 'ink';
+import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { basename, join, resolve } from 'node:path';
 import * as buffer from '../buffer.js';
 import { fromColumn, highlight, withCursor, withSelection } from '../highlight.js';
-import { ERROR_MARK, VERBOSE_MARK, WARN_MARK } from '../powershell.js';
 import { HELP } from '../help.js';
 import { FACES, moodFor } from '../pet.js';
 import { familyMood, reactionTo } from '../moods.js';
 import { theme } from '../theme.js';
-import { VERSION } from '../app.js';
 import { useKeyTranslation, useTerminalSize } from '@fleet/kit/ui/hooks.js';
 import { Panel, PromptBox, Row, promptHeight } from '@fleet/kit/ui/parts.jsx';
 import { StatusLine, topLine } from '@fleet/kit/ui/shell.jsx';
 import { fitSegments } from '@fleet/kit/text.js';
+import { screenLines } from '@fleet/kit/vt.js';
 import { copyToClipboard } from '@fleet/kit/clipboard.js';
 import { logActivity, readMoods, writeMood } from '@fleet/kit/family.js';
 
 const GUTTER = 5;
-const MAX_OUTPUT = 5000;
 const HINTS = {
   script: 'F5 run · F8 run line/selection · ctrl+s save · ctrl+f find · ctrl+z undo · ctrl+t console · F1 help',
-  console: '↵ run · tab complete · ↑↓ history · pgup/pgdn scroll · ctrl+l clear · ctrl+t script · F1 help',
+  console: 'keys go to PowerShell · F5 run script · F8 run line · shift+pgup/pgdn look back · ctrl+t script',
 };
 const VIEWS = [
   { id: 'script', key: 1, label: 'Script' },
@@ -35,59 +34,56 @@ const PATH_PLACEHOLDER = {
 const UNDO_DEPTH = 200;
 const UNDO_JOIN_MS = 500;
 const WHEEL_ROWS = 3;
+const NOTE_MS = 5000;
 
 // Ink doesn't report function keys at all (F5 arrives as an empty key), so they are turned into the
 // ctrl keys that do the same, before anything else sees them.
 const ESC = String.fromCharCode(27);
+const F5 = `${ESC}[15~`;
+const F8 = `${ESC}[19~`;
 const FUNCTION_KEYS = {
-  [`${ESC}[15~`]: String.fromCharCode(18), // F5 → ctrl+r
-  [`${ESC}[19~`]: String.fromCharCode(5), // F8 → ctrl+e
+  [F5]: String.fromCharCode(18), // F5 → ctrl+r
+  [F8]: String.fromCharCode(5), // F8 → ctrl+e
   [`${ESC}OP`]: `${ESC}h`, // F1 → alt+h
   [`${ESC}[11~`]: `${ESC}h`,
 };
+// In the Console view every key goes to PowerShell as it came, but these: F5 and F8 run, ctrl+t and ctrl+\ go back
+// to the script, ctrl+q quits, and shift+PgUp/PgDn look back through what scrolled away.
+const CONSOLE_KEYS = /(\x1b\[15~|\x1b\[19~|\x14|\x1c|\x11|\x1b\[5;2~|\x1b\[6;2~)/;
 
 // The top line's right side: the script's file (with * while it has unsaved changes) and the PowerShell
 // that runs it.
-function headerContext({ path, dirty, session, running }) {
+function headerContext({ path, dirty, shell, running }) {
   const segs = [];
   if (running) segs.push({ text: 'running', color: theme.warn }, { text: '  ' });
   segs.push({ text: `${path ? basename(path) : 'untitled.ps1'}${dirty ? ' *' : ''}`, color: theme.dim });
-  if (session) segs.push({ text: `  ${session.bin}`, color: theme.dim });
+  if (shell) segs.push({ text: `  ${shell.name}`, color: theme.dim });
   return segs;
 }
 
-const OUTPUT_COLOR = { in: () => theme.accent, err: () => theme.del, warn: () => theme.warn, verbose: () => theme.dim, info: () => theme.dim, out: () => undefined };
+/** A path as a PowerShell string: single quotes, each one in it doubled (PowerShell takes the curly ones as quotes too). */
+export const psQuote = (s) => `'${String(s).replace(/['‘’‚‛]/g, (q) => q + q)}'`;
 
-// The last `rows` screen rows of lines[..end): long lines wrap, and only the ones that show are cut up.
-function tailRows(lines, end, rows, width) {
-  const out = [];
-  for (let i = end - 1; i >= 0 && out.length < rows; i--) {
-    const text = lines[i].text.replace(/\t/g, '    ');
-    const parts = [];
-    for (let at = 0; at < Math.max(1, text.length); at += width) parts.push(text.slice(at, at + width));
-    for (let k = parts.length - 1; k >= 0 && out.length < rows; k--) out.push({ kind: lines[i].kind, text: parts[k] });
-  }
-  return out.reverse();
-}
-
-// `session` is powershell.js's createSession (or null when no PowerShell is installed); `file` is
-// opened at the start. `setTitle` comes from cli.jsx; tests leave it out.
+// `shell` is { name, open(options) } (cli.jsx: terminal.js's openTerminal for the PowerShell found), or null when
+// there is none; `file` is opened at the start. `setTitle` comes from cli.jsx; tests leave it out.
 // `family: false` keeps the app out of the family's mood and activity files (the tests' way); `moodEvery` is how
-// often a sibling's mood is looked for.
-export function App({ session, file, cwd = process.cwd(), setTitle, mouse, family = true, moodEvery = 30_000 }) {
+// often a sibling's mood is looked for. `scratch` is the folder unsaved scripts and selections are run from.
+export function App({ shell, file, cwd = process.cwd(), setTitle, mouse, family = true, moodEvery = 30_000, scratch = join(tmpdir(), `helm-${process.pid}`) }) {
   const { exit } = useApp();
   const { columns, rows } = useTerminalSize();
   const [buf, setBuf] = useState(() => buffer.create(''));
   const [top, setTop] = useState(0);
   const [left, setLeft] = useState(0);
   const [path, setPath] = useState(null);
+  const pathFile = useRef(null);
   const [dirty, setDirtyState] = useState(false);
   const dirtyRef = useRef(false);
   const setDirty = (v) => {
     dirtyRef.current = v;
     setDirtyState(v);
   };
-  // Which view is shown: 'script' (the script over its output) or 'console' (the whole screen for the session).
+  // Which view is shown: 'script' (the script over the console) or 'console' (the whole screen for PowerShell, which
+  // then has the keys).
   const [focus, setFocusState] = useState('script');
   // Kept in a ref too: the key after ctrl+t can arrive before React has drawn the switch.
   const focusRef = useRef('script');
@@ -95,11 +91,13 @@ export function App({ session, file, cwd = process.cwd(), setTitle, mouse, famil
     focusRef.current = typeof v === 'function' ? v(focusRef.current) : v;
     setFocusState(focusRef.current);
   };
-  const [output, setOutput] = useState(() => [{ kind: 'info', text: session ? `Helm ${VERSION} — PowerShell session in ${cwd}` : 'No PowerShell found: install pwsh (PowerShell 7) to run scripts.' }]);
+  // PowerShell, with its terminal (terminal.js), and how it ended when it has.
+  const termRef = useRef(null);
+  const [, setTick] = useState(0);
+  const [ended, setEnded] = useState(null);
   const [back, setBack] = useState(0);
+  const [note, setNote] = useState(null);
   const [prompt, setPrompt] = useState({ value: '', cursor: 0 });
-  const [history, setHistory] = useState([]);
-  const [recall, setRecall] = useState(-1);
   const [pathMode, setPathModeState] = useState(null);
   // In a ref too, like the focus: the key after a path is submitted can arrive before React has drawn it.
   const pathRef = useRef(null);
@@ -109,20 +107,21 @@ export function App({ session, file, cwd = process.cwd(), setTitle, mouse, famil
   };
   const [split, setSplit] = useState(0.55);
   const [help, setHelp] = useState(false);
-  const returnTo = useRef('script');
+  const helpRef = useRef(false);
+  helpRef.current = help;
   const lastFind = useRef('');
   const undoStack = useRef([]);
   const redoStack = useRef([]);
   const lastEdit = useRef(0);
-  const completion = useRef(null);
   // The newest result ({ ok, at }) for Spoke's mood, which wears off; a sibling's mood Spoke reacts to until esc.
   const [last, setLast] = useState(null);
   const [, setMoodTick] = useState(0);
   const [reaction, setReaction] = useState(null);
   const seenMoods = useRef(new Set());
+  // A run F5 or F8 typed, until PowerShell's prompt comes back and says how it went: { did }.
   const [running, setRunning] = useState(false);
+  const runningRef = useRef(null);
   const quitArmed = useRef(false);
-  const runningRef = useRef(false);
   // What the keys act on, kept in step synchronously: keys can arrive faster than React renders.
   const bufRef = useRef(buf);
   const promptRef = useRef(prompt);
@@ -134,36 +133,20 @@ export function App({ session, file, cwd = process.cwd(), setTitle, mouse, famil
     promptRef.current = { value, cursor };
     setPrompt(promptRef.current);
   };
+  const say = (text, tone) => setNote({ text, tone, at: Date.now() });
 
-  // Lines wait for the end of the current turn and go in together: a script printing tens of thousands
-  // of lines would otherwise copy the whole pane for each one.
-  const saying = useRef([]);
-  const say = (kind, text) => {
-    if (!saying.current.length)
-      queueMicrotask(() => {
-        const lines = saying.current;
-        saying.current = [];
-        setOutput((o) => (o.length + lines.length > MAX_OUTPUT ? [...o, ...lines].slice(-MAX_OUTPUT) : [...o, ...lines]));
-      });
-    saying.current.push({ kind, text });
-  };
-  const clearOutput = () => {
-    saying.current.length = 0;
-    setOutput([]);
-  };
-
-  // Layout: the top line, the script pane, the output pane, the prompt, the status line. A pane's
-  // title row is the only row it spends.
-  const showPrompt = focus === 'console' || pathMode;
-  const body = Math.max(8, rows - 2 - (showPrompt ? promptHeight() : 0));
+  // Layout: the top line, the script pane and the console pane (or the console alone), the prompt while a path or a
+  // find is asked (its rows taken from the script), the status line. A pane's title row is the only row it spends.
+  const body = Math.max(8, rows - 2);
   const scriptH = Math.max(4, Math.min(body - 4, Math.floor(body * split)));
-  const outputH = Math.max(4, body - scriptH);
-  // The rows that scroll the output: the output pane's, or the console's whole screen.
-  const viewRows = (focus === 'console' ? body : outputH) - 1;
+  const consoleH = focus === 'console' ? body : Math.max(4, body - scriptH);
   const inner = columns - 2;
-  const scriptRows = scriptH - 1;
-  const outputRows = outputH - 1;
+  const asking = pathMode ? promptHeight() : 0;
+  const scriptRows = Math.max(1, scriptH - 1 - asking);
+  const consoleRows = consoleH - 1;
   const codeW = Math.max(10, inner - GUTTER);
+  const size = useRef({ columns: inner, rows: consoleRows });
+  size.current = { columns: Math.max(20, inner), rows: Math.max(3, consoleRows) };
 
   // Edits close together share one undo step, so typing a word undoes as a word.
   const edit = (fn) => {
@@ -190,16 +173,48 @@ export function App({ session, file, cwd = process.cwd(), setTitle, mouse, famil
   const copySelection = (cut) => {
     const text = buffer.selectedText(bufRef.current);
     if (!text) return false;
-    copyToClipboard(text).then((where) => say('info', `${cut ? 'Cut' : 'Copied'} ${text.length} characters${where === 'terminal' ? ' (through the terminal)' : ''}`));
+    copyToClipboard(text).then((where) => say(`${cut ? 'Cut' : 'Copied'} ${text.length} characters${where === 'terminal' ? ' (through the terminal)' : ''}`));
     if (cut) edit(buffer.removeSelection);
     return true;
   };
   const findNext = (query) => {
     const hit = buffer.find(bufRef.current, query);
-    if (!hit) return say('info', `Not found: ${query}`);
+    if (!hit) return say(`Not found: ${query}`);
     update(() => hit);
   };
   const moveCursor = (to) => update((b) => buffer.move(b, to, scriptRows - 1));
+
+  // The prompt came back: the run F5 or F8 typed is over, and how it went is Spoke's and the activity log's.
+  const finishRun = (ok) => {
+    const run = runningRef.current;
+    if (!run) return;
+    runningRef.current = null;
+    setRunning(false);
+    setLast({ ok, at: Date.now() });
+    if (family) logActivity('helm', { text: ok ? run.did : `${run.did} (it failed)`, kind: ok ? 'info' : 'error', project: cwd });
+  };
+
+  // PowerShell, as big as the console pane is; started again by ↵ in the Console view, or by a run, once it ended.
+  const openShell = () => {
+    if (termRef.current?.alive) return termRef.current;
+    if (!shell) return null;
+    termRef.current?.close();
+    setEnded(null);
+    const mine = shell.open({
+      ...size.current,
+      cwd,
+      onChange: () => setTick((n) => n + 1),
+      onPrompt: (ok) => termRef.current === mine && finishRun(ok),
+      onExit: (info) => {
+        if (termRef.current !== mine) return;
+        setEnded(info);
+        if (runningRef.current) finishRun(false);
+      },
+    });
+    termRef.current = mine;
+    setTick((n) => n + 1);
+    return mine;
+  };
 
   // Keep the cursor in view as it moves.
   useEffect(() => {
@@ -213,8 +228,23 @@ export function App({ session, file, cwd = process.cwd(), setTitle, mouse, famil
 
   useEffect(() => {
     if (file) openFile(file);
-    return () => session?.close();
+    openShell();
+    return () => {
+      termRef.current?.close();
+      rmSync(scratch, { recursive: true, force: true });
+    };
   }, []);
+
+  // The console's room changes with the view and the split: PowerShell is told (terminal.js waits for it to settle).
+  useEffect(() => {
+    if (termRef.current?.alive) termRef.current.resize(size.current.columns, size.current.rows);
+  }, [size.current.columns, size.current.rows]);
+
+  useEffect(() => {
+    if (!note) return;
+    const t = setTimeout(() => setNote((n) => (n === note ? null : n)), NOTE_MS);
+    return () => clearTimeout(t);
+  }, [note]);
 
   useEffect(() => {
     if (!last) return;
@@ -235,45 +265,58 @@ export function App({ session, file, cwd = process.cwd(), setTitle, mouse, famil
     return () => clearInterval(t);
   }, [family, moodEvery]);
 
-  useKeyTranslation((input) => FUNCTION_KEYS[input] ?? input);
-
-  // `did` is what the family's activity log says about it: which script, never the code.
-  const execute = async (code, label, did = 'Ran a command') => {
-    if (runningRef.current || !code.trim()) return;
-    if (!session) return say('err', 'No PowerShell found.');
-    runningRef.current = true;
-    setRunning(true);
+  // Types `line` into PowerShell and presses ↵, as if you had. `did` is what the family's activity log says about it:
+  // which script, never the code. With no prompt marks (terminal.js), a run's end can't be told, so none is waited for.
+  const typeRun = (line, did) => {
+    const t = openShell();
+    if (!t) return say('No PowerShell found: install pwsh (PowerShell 7).', 'danger');
     setBack(0);
-    say('in', label);
-    let failed = false;
-    try {
-      const r = await session.run(code, (text) => {
-        if (text.startsWith(ERROR_MARK)) {
-          failed = true;
-          say('err', text.slice(1));
-        }
-        else if (text.startsWith(WARN_MARK)) say('warn', `WARNING: ${text.slice(1)}`);
-        else if (text.startsWith(VERBOSE_MARK)) say('verbose', text.slice(1));
-        else say('out', text);
-      });
-      if (r.stopped) failed = true;
-      if (r.stopped) say('info', 'Stopped. The session starts again with the next run, without its variables.');
-    } catch (err) {
-      failed = true;
-      say('err', String(err.message ?? err));
-    }
-    runningRef.current = false;
-    setRunning(false);
-    setLast({ ok: !failed, at: Date.now() });
-    if (family) logActivity('helm', { text: failed ? `${did} (it failed)` : did, kind: failed ? 'error' : 'info', project: cwd });
+    if (t.marks) {
+      runningRef.current = { did };
+      setRunning(true);
+    } else if (family) logActivity('helm', { text: did, kind: 'info', project: cwd });
+    t.write(`${line}\r`);
   };
-
-  const runScript = () => execute(buffer.textOf(bufRef.current), `▶ Run ${path ? basename(path) : 'script'}`, `Ran ${path ? basename(path) : 'a script'}`);
+  // Code of more than one line goes in a file in the scratch folder, dot-sourced, so it runs as one.
+  const scratchFile = (name, text) => {
+    mkdirSync(scratch, { recursive: true });
+    const full = join(scratch, name);
+    writeFileSync(full, text);
+    return full;
+  };
+  const runScript = () => {
+    const text = buffer.textOf(bufRef.current);
+    if (!text.trim()) return;
+    const name = path ? basename(path) : 'untitled.ps1';
+    // A saved script runs from where it is (its $PSScriptRoot is its folder); one with changes, as it is on screen.
+    const where = pathFile.current && !dirtyRef.current ? pathFile.current : scratchFile(name, text);
+    typeRun(`. ${psQuote(where)}`, `Ran ${path ? name : 'a script'}`);
+  };
   const runLine = () => {
     const picked = buffer.selectedText(bufRef.current);
-    if (picked) return execute(picked, `▶ selection (${picked.split('\n').length} line${picked.includes('\n') ? 's' : ''})`, 'Ran a selection');
-    const line = buffer.currentLine(bufRef.current);
-    return execute(line, `▶ ${line.trim()}`, 'Ran a line');
+    const code = picked || buffer.currentLine(bufRef.current);
+    if (!code.trim()) return;
+    if (code.includes('\n')) return typeRun(`. ${psQuote(scratchFile('selection.ps1', code))}`, 'Ran a selection');
+    // A tab would ask PowerShell to complete what's typed.
+    typeRun(code.replace(/\t/g, '  ').trim(), picked ? 'Ran a selection' : 'Ran a line');
+  };
+  // esc and ctrl+c, from the script: ctrl+c to PowerShell, which stops what it's running (sent at an idle prompt only
+  // when there are no prompt marks to tell whether something runs).
+  const stop = () => {
+    const t = termRef.current;
+    if (t?.alive && (runningRef.current || !t.marks)) t.write('\x03');
+  };
+  const quit = () => {
+    if (dirtyRef.current && !quitArmed.current) {
+      quitArmed.current = true;
+      return say('The script has unsaved changes: ctrl+s saves, ctrl+q again quits without saving.', 'warn');
+    }
+    exit();
+  };
+  const scroll = (n) => {
+    const t = termRef.current;
+    const most = t ? t.vt.history.length : 0;
+    setBack((b) => Math.max(0, Math.min(most, b + n)));
   };
 
   function openFile(name) {
@@ -282,82 +325,47 @@ export function App({ session, file, cwd = process.cwd(), setTitle, mouse, famil
       update(() => buffer.create(readFileSync(full, 'utf8')));
       resetHistory();
       setPath(full);
+      pathFile.current = full;
       setDirty(false);
       setTop(0);
-      say('info', `Opened ${full}`);
+      say(`Opened ${full}`);
     } catch (err) {
-      say('err', `Could not open ${name}: ${err.message}`);
+      say(`Could not open ${name}: ${err.message}`, 'danger');
     }
   }
 
   function saveFile(name) {
     try {
       const full = resolve(cwd, name);
-      writeFileSync(full, buffer.textOf(buf));
+      writeFileSync(full, buffer.textOf(bufRef.current));
       setPath(full);
+      pathFile.current = full;
       setDirty(false);
-      say('info', `Saved ${full}`);
+      say(`Saved ${full}`);
     } catch (err) {
-      say('err', `Could not save ${name}: ${err.message}`);
+      say(`Could not save ${name}: ${err.message}`, 'danger');
     }
   }
 
   const ask = (mode) => {
-    returnTo.current = focusRef.current;
     setPathMode(mode);
-    setFocus('console');
     const value = mode === 'save' && path ? path : mode === 'find' ? lastFind.current : '';
     setPromptNow(value, value.length);
   };
 
   const submit = () => {
     const value = promptRef.current.value;
+    const mode = pathRef.current;
     setPromptNow('', 0);
-    if (pathRef.current) {
-      const mode = pathRef.current;
-      setPathMode(null);
-      setFocus(returnTo.current);
-      if (mode === 'find') {
-        lastFind.current = value;
-        return findNext(value);
-      }
-      if (value.trim()) (mode === 'open' ? openFile : saveFile)(value.trim());
-      return;
+    setPathMode(null);
+    if (mode === 'find') {
+      lastFind.current = value;
+      return findNext(value);
     }
-    if (!value.trim()) return;
-    setHistory((h) => [value, ...h.filter((x) => x !== value)].slice(0, 200));
-    setRecall(-1);
-    execute(value, `PS> ${value}`);
+    if (value.trim()) (mode === 'open' ? openFile : saveFile)(value.trim());
   };
 
-  // Tab: what PowerShell would complete the text before the cursor to (TabExpansion2, in the session
-  // itself, so its variables and modules count); pressing it again goes to the next one.
-  const complete = async () => {
-    const { value, cursor } = promptRef.current;
-    let c = completion.current;
-    if (!c || c.shown !== value) {
-      if (!session?.run || runningRef.current) return;
-      runningRef.current = true;
-      const matches = [];
-      const text = value.slice(0, cursor).replace(/'/g, "''");
-      const code = `& { param($t, $c) $r = TabExpansion2 $t $c; $r.CompletionMatches | ForEach-Object { "$($r.ReplacementIndex)|$($r.ReplacementLength)|$($_.CompletionText)" } } '${text}' ${cursor}`;
-      try {
-        await session.run(code, (line) => {
-          const m = /^(\d+)\|(\d+)\|(.*)$/.exec(line);
-          if (m) matches.push({ at: Number(m[1]), len: Number(m[2]), text: m[3] });
-        });
-      } catch {}
-      runningRef.current = false;
-      if (!matches.length || promptRef.current.value !== value) return;
-      c = completion.current = { orig: value, cursor, matches, i: -1, shown: value };
-    }
-    c.i = (c.i + 1) % c.matches.length;
-    const m = c.matches[c.i];
-    const next = c.orig.slice(0, m.at) + m.text + c.orig.slice(m.at + m.len);
-    c.shown = next;
-    setPromptNow(next, m.at + m.text.length);
-  };
-
+  // Line editing in the path and find prompt.
   const promptKeys = (input, key) => {
     const { value, cursor } = promptRef.current;
     const set = setPromptNow;
@@ -368,16 +376,6 @@ export function App({ session, file, cwd = process.cwd(), setTitle, mouse, famil
     if (key.end) return set(value, value.length);
     if (key.backspace || key.delete) return cursor > 0 ? set(value.slice(0, cursor - 1) + value.slice(cursor), cursor - 1) : undefined;
     if (key.ctrl && input === 'u') return set(value.slice(cursor), 0);
-    if (!pathRef.current && (key.upArrow || key.downArrow)) {
-      const next = Math.max(-1, Math.min(history.length - 1, recall + (key.upArrow ? 1 : -1)));
-      setRecall(next);
-      const v = next < 0 ? '' : history[next];
-      return set(v, v.length);
-    }
-    if (key.tab && !pathRef.current) return complete();
-    completion.current = null;
-    if (key.pageUp) return setBack((b) => Math.min(Math.max(0, output.length - viewRows), b + viewRows - 1));
-    if (key.pageDown) return setBack((b) => Math.max(0, b - viewRows + 1));
     if (key.ctrl || key.meta || !input) return;
     const text = input.replace(/\r?\n/g, ' ');
     set(value.slice(0, cursor) + text + value.slice(cursor), cursor + text.length);
@@ -404,39 +402,56 @@ export function App({ session, file, cwd = process.cwd(), setTitle, mouse, famil
     edit((b) => buffer.insert(b, input));
   };
 
+  // The Console view's keys, before Ink reads any: PowerShell's, as they came, but for CONSOLE_KEYS. A shell that
+  // ended waits for ↵ to start another.
+  const consoleKeys = (input) => {
+    for (const part of input.split(CONSOLE_KEYS)) {
+      if (!part) continue;
+      if (part === F5) queueMicrotask(runScript);
+      else if (part === F8) queueMicrotask(runLine);
+      else if (part === '\x14' || part === '\x1c') setFocus('script');
+      else if (part === '\x11') quit();
+      else if (part === '\x1b[5;2~') scroll(Math.max(1, size.current.rows - 1));
+      else if (part === '\x1b[6;2~') scroll(-Math.max(1, size.current.rows - 1));
+      else if (focusRef.current !== 'console') continue;
+      else if (termRef.current?.alive) {
+        quitArmed.current = false;
+        setBack(0);
+        termRef.current.write(part);
+      } else if (part.includes('\r')) openShell();
+    }
+    return null;
+  };
+
+  useKeyTranslation((input) => {
+    if (focusRef.current === 'console' && !pathRef.current && !helpRef.current) return consoleKeys(input);
+    return FUNCTION_KEYS[input] ?? input;
+  });
+
   useInput((input, key) => {
     if (help && !(key.ctrl && input === 'q')) return setHelp(false);
     if (key.escape && reaction && !runningRef.current && !pathRef.current) return setReaction(null);
-    if (key.ctrl && input === 'q') {
-      if (dirtyRef.current && !quitArmed.current) {
-        quitArmed.current = true;
-        return say('info', 'The script has unsaved changes: ctrl+s saves, ctrl+q again quits without saving.');
-      }
-      return exit();
-    }
+    if (key.ctrl && input === 'q') return quit();
     quitArmed.current = false;
-    if (key.ctrl && input === 'c' && !running && focusRef.current === 'script' && !pathRef.current && copySelection(false)) return;
-    if ((key.ctrl && input === 'c') || key.escape) {
-      if (running) return session.stop();
-      if (key.escape && pathRef.current) {
+    if (pathRef.current) {
+      if (key.escape || (key.ctrl && input === 'c')) {
         setPathMode(null);
-        setPromptNow('', 0);
-        return setFocus(returnTo.current);
+        return setPromptNow('', 0);
       }
-      if (key.escape && focusRef.current === 'script') return update((b) => ({ ...b, anchor: undefined }));
-      return;
+      return promptKeys(input, key);
     }
+    if (key.ctrl && input === 'c' && !runningRef.current && copySelection(false)) return;
+    if (key.escape && buffer.selection(bufRef.current) && !runningRef.current) return update((b) => ({ ...b, anchor: undefined }));
+    if ((key.ctrl && input === 'c') || key.escape) return stop();
     if (key.meta && input === 'h') return setHelp(true);
-    if (key.meta && (input === '1' || input === '2') && !pathRef.current) return setFocus(input === '1' ? 'script' : 'console');
-    if (focusRef.current === 'script' && !pathRef.current) {
-      if (key.meta && (key.upArrow || key.downArrow)) return setSplit((v) => Math.max(0.25, Math.min(0.8, v + (key.downArrow ? 0.05 : -0.05))));
-      if (key.ctrl && input === 'z') return travel(undoStack, redoStack);
-      if (key.ctrl && input === 'y') return travel(redoStack, undoStack);
-      if (key.ctrl && input === 'a') return update(buffer.selectAll);
-      if (key.ctrl && input === 'x') return void copySelection(true);
-      if (key.ctrl && input === 'f') return ask('find');
-      if (key.ctrl && input === 'g') return lastFind.current ? findNext(lastFind.current) : ask('find');
-    }
+    if (key.meta && (input === '1' || input === '2')) return setFocus(input === '1' ? 'script' : 'console');
+    if (key.meta && (key.upArrow || key.downArrow)) return setSplit((v) => Math.max(0.25, Math.min(0.8, v + (key.downArrow ? 0.05 : -0.05))));
+    if (key.ctrl && input === 'z') return travel(undoStack, redoStack);
+    if (key.ctrl && input === 'y') return travel(redoStack, undoStack);
+    if (key.ctrl && input === 'a') return update(buffer.selectAll);
+    if (key.ctrl && input === 'x') return void copySelection(true);
+    if (key.ctrl && input === 'f') return ask('find');
+    if (key.ctrl && input === 'g') return lastFind.current ? findNext(lastFind.current) : ask('find');
     if (key.ctrl && input === 'r') return runScript();
     if (key.ctrl && input === 'e') return runLine();
     if (key.ctrl && input === 's') return path ? saveFile(path) : ask('save');
@@ -445,12 +460,19 @@ export function App({ session, file, cwd = process.cwd(), setTitle, mouse, famil
       resetHistory();
       update(() => buffer.create(''));
       setPath(null);
+      pathFile.current = null;
       setDirty(false);
       return setTop(0);
     }
-    if (key.ctrl && input === 'l') return clearOutput();
-    if ((key.ctrl && input === 't') || (key.tab && key.shift)) return pathRef.current ? undefined : setFocus((f) => (f === 'script' ? 'console' : 'script'));
-    return focusRef.current === 'script' && !pathRef.current ? scriptKeys(input, key) : promptKeys(input, key);
+    // ctrl+l clears the console: PowerShell's own clear screen, and what scrolled away.
+    if (key.ctrl && input === 'l') {
+      if (runningRef.current || !termRef.current?.alive) return;
+      termRef.current.vt.history.length = 0;
+      setBack(0);
+      return termRef.current.write('\x0c');
+    }
+    if ((key.ctrl && input === 't') || (key.tab && key.shift)) return setFocus('console');
+    return scriptKeys(input, key);
   });
 
   // The mouse (where the terminal reports it): a click on a view's tab switches to it, a click or a
@@ -475,7 +497,7 @@ export function App({ session, file, cwd = process.cwd(), setTitle, mouse, famil
     }
     if (e.wheel) {
       if (g.view === 'script' && e.y >= 1 && e.y < 1 + g.scriptH) return setTop((t) => Math.max(0, Math.min(bufRef.current.lines.length - 1, t + e.wheel * WHEEL_ROWS)));
-      return setBack((v) => Math.max(0, Math.min(Math.max(0, output.length - g.viewRows), v - e.wheel * WHEEL_ROWS)));
+      return scroll(-e.wheel * WHEEL_ROWS);
     }
     if (e.button !== 'left' || e.release) return;
     if (e.y === 0) {
@@ -511,17 +533,26 @@ export function App({ session, file, cwd = process.cwd(), setTitle, mouse, famil
     );
   }
 
-  const end = Math.max(0, output.length - back);
-  const shown = tailRows(output, end, viewRows, inner);
-  const outputRowsEls = shown.map((l, i) => <Row key={i} pointer={false} width={inner} segments={[{ text: l.text, color: OUTPUT_COLOR[l.kind]() }]} />);
-  const mood = moodFor({ state: { running, none: !session }, last });
+  // The console: PowerShell's scrollback and screen, its cursor showing while it has the keys.
+  const term = termRef.current;
+  const typing = focus === 'console' && !pathMode && !help;
+  const consoleEls = term
+    ? screenLines(term.vt, { height: consoleRows, back, cursor: typing && term.alive }).map((line, i) => (
+        <Text key={i} wrap="truncate">
+          {line}
+        </Text>
+      ))
+    : [<Row key="none" pointer={false} width={inner} segments={[{ text: '  No PowerShell found: install pwsh (PowerShell 7) to run scripts.', color: theme.dim }]} />];
+  const consoleHint = back ? `${back} lines up` : ended ? `ended${ended.code ? ` (exit ${ended.code})` : ''}${ended.error ? `: ${ended.error.message}` : ''} · ↵ in the Console starts it again` : undefined;
+
+  const mood = moodFor({ state: { running, none: !shell }, last });
   const feeling = familyMood({ mood });
   useEffect(() => {
     if (family) writeMood('helm', feeling);
   }, [feeling.mood, feeling.reason, family]);
-  const top1 = topLine({ face: FACES[mood], title: 'Helm', views: VIEWS, view: focus === 'console' && pathMode ? returnTo.current : focus, context: headerContext({ path, dirty, session, running }), width: columns, compact: true });
+  const top1 = topLine({ face: FACES[mood], title: 'Helm', views: VIEWS, view: focus, context: headerContext({ path, dirty, shell, running }), width: columns, compact: true });
 
-  geo.current = { top, left, view: focus === 'console' && !pathMode ? 'console' : 'script', scriptRows, scriptH, viewRows, tabs: top1.tabs };
+  geo.current = { top, left, view: focus, scriptRows, scriptH, tabs: top1.tabs };
   let main;
   if (help) {
     const lines = [];
@@ -534,31 +565,33 @@ export function App({ session, file, cwd = process.cwd(), setTitle, mouse, famil
         {lines.slice(0, body - 1)}
       </Panel>
     );
-  } else if (focus === 'console' && !pathMode) {
+  } else if (focus === 'console') {
     main = (
-      <Panel title="Console" hint={back ? `${back} lines up` : undefined} width={columns} height={body} focused>
-        {outputRowsEls}
+      <Panel title="Console" hint={consoleHint} width={columns} height={consoleH} focused>
+        {consoleEls}
       </Panel>
     );
   } else {
     main = (
       <>
-        <Panel title="Script" hint={`${buf.row + 1}:${buf.col + 1}${buffer.selection(buf) ? ` · ${buffer.selectedText(buf).length} selected` : ''}`} width={columns} height={scriptH} focused={focus === 'script' && !pathMode}>
+        <Panel title="Script" hint={`${buf.row + 1}:${buf.col + 1}${buffer.selection(buf) ? ` · ${buffer.selectedText(buf).length} selected` : ''}`} width={columns} height={scriptH - asking} focused={!pathMode}>
           {scriptLines}
         </Panel>
-        <Panel title="Output" hint={back ? `${back} lines up` : undefined} width={columns} height={outputH} focused={false}>
-          {outputRowsEls}
+        {pathMode ? <PromptBox value={prompt.value} cursor={prompt.cursor} focused width={columns} placeholder={PATH_PLACEHOLDER[pathMode]} bang={false} /> : null}
+        <Panel title="Console" hint={consoleHint ?? 'ctrl+t types in it'} width={columns} height={consoleH} focused={false}>
+          {consoleEls}
         </Panel>
       </>
     );
   }
 
+  const message = pathMode ? PATH_PLACEHOLDER[pathMode] : note ? note.text : running ? 'running… (esc stops)' : reaction ? [{ text: reaction.text }, { text: '  esc', color: theme.dim }] : '';
+  const tone = pathMode ? undefined : note ? note.tone : running ? 'warn' : undefined;
   return (
     <Box flexDirection="column" width={columns} height={rows}>
       <Row pointer={false} width={columns} segments={top1.segments} />
       {main}
-      {showPrompt && !help ? <PromptBox value={prompt.value} cursor={prompt.cursor} focused width={columns} placeholder={pathMode ? PATH_PLACEHOLDER[pathMode] : 'PowerShell command (tab completes, ctrl+t leaves)'} bang={false} /> : null}
-      <StatusLine face={FACES[reaction && !running ? (reaction.mood === 'happy' ? 'happy' : 'worried') : mood]} news={Boolean(reaction) && !running && !pathMode} message={pathMode ? PATH_PLACEHOLDER[pathMode] : running ? 'running… (esc stops)' : reaction ? [{ text: reaction.text }, { text: '  esc', color: theme.dim }] : ''} tone={running && !pathMode ? 'warn' : undefined} keys={pathMode ? '↵ go · esc cancel' : HINTS[focus]} width={columns} />
+      <StatusLine face={FACES[reaction && !running ? (reaction.mood === 'happy' ? 'happy' : 'worried') : mood]} news={Boolean(reaction) && !running && !pathMode && !note} message={message} tone={tone} keys={pathMode ? '↵ go · esc cancel' : HINTS[focus]} width={columns} />
     </Box>
   );
 }
