@@ -1,7 +1,7 @@
-// Draws Fleet's mark: a compass, a white needle in a brass ring, what a fleet steers by. It's drawn the
-// way Keel's mark is, flat on a graphite tile in two colours, each shape cut across with a deeper tone on
-// one side: the ring as Keel's, cut low with the deeper tone under the cut, the needle the other way up,
-// cut high with the deeper tone over it, so the two cuts hold the needle between them. One drawing,
+// Draws Fleet's mark: a command line, three prompts (>) one under another, each with what was typed
+// after it, shorter each time, and the last only the cursor. It's drawn the way Keel's mark is, flat
+// shapes on a graphite tile. Green, a terminal's colour, is one no mark beside it on a taskbar uses
+// (Keel's is blue). One drawing,
 // written to:
 //   assets/logo.svg, logo.png (512 px)          the README
 //   assets/logo.ico                              the Windows executable and its shortcuts (the kit's
@@ -13,19 +13,29 @@
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { deflateSync } from 'node:zlib';
 
-// The needle's tones, the deeper one `above` its cut, and the ring's, the deeper one `below`.
-const WHITE = { above: '#bec0c2', below: '#ffffff' };
-const BRASS = { above: '#e6c07b', below: '#a87d3c' };
+// Each shape's two tones, the deeper one `above` its cut; a shape with no cut is its `below` tone.
+const tone = (hex) => ({ above: hex, below: hex });
+const PROMPT = tone('#5fd787');
+const TYPED = tone('#2e9e5b');
+const CURSOR = tone('#ffffff');
+
+/** A prompt's chevron: `x` its back, `cy` its middle, `h` half its height, `w` an arm's width, `d` how far its point leads. */
+const chevron = (x, cy, h, w, d) => [[x, cy - h], [x + w, cy - h], [x + w + d, cy], [x + w, cy + h], [x, cy + h], [x + d, cy]];
+const rect = (x, y, w, h) => [[x, y], [x + w, y], [x + w, y + h], [x, y + h]];
 
 export const MARK = {
   size: 64,
   tile: { radius: 13, fill: '#16181d' },
   /** How tall each cut is. */
   gap: 3,
-  // The needle, north up, cut a little above the middle; the ring around it, cut as far below it.
+  // Three lines 14 apart, each 8 high: a prompt, then what was typed, the last line only the cursor.
   shapes: [
-    { points: [[32, 16], [38, 32], [32, 48], [26, 32]], cut: 24, colours: WHITE },
-    { ring: { cx: 32, cy: 32, inner: 16, outer: 25 }, cut: 37, colours: BRASS },
+    { points: chevron(12, 18, 5, 5, 5), cut: null, colours: PROMPT },
+    { points: rect(28, 14, 24, 8), cut: null, colours: TYPED },
+    { points: chevron(12, 32, 5, 5, 5), cut: null, colours: PROMPT },
+    { points: rect(28, 28, 16, 8), cut: null, colours: TYPED },
+    { points: chevron(12, 46, 5, 5, 5), cut: null, colours: PROMPT },
+    { points: rect(28, 42, 9, 8), cut: null, colours: CURSOR },
   ],
 };
 
@@ -64,6 +74,7 @@ function markRows(size, { tile = true } = {}) {
     // In a shape's cut there's only the tile; either side of it, the shape's two tones.
     for (const shape of MARK.shapes) {
       if (!(shape.ring ? inRing(u, v, shape.ring) : inPolygon(u, v, shape.points))) continue;
+      if (shape.cut == null) return rgb(shape.colours.below);
       if (v >= shape.cut && v < shape.cut + MARK.gap) return onTile(u, v);
       return rgb(shape.colours[v < shape.cut ? 'above' : 'below']);
     }
@@ -109,9 +120,9 @@ export function markSvg({ tile = true, title = 'Fleet' } = {}) {
       : s.ring
       ? `<path d="${circle(s.ring.cx, s.ring.cy, s.ring.outer)} ${circle(s.ring.cx, s.ring.cy, s.ring.inner)}" fill-rule="evenodd" fill="${fill}"/>`
       : `<path d="M${s.points.map(([x, y]) => `${x} ${y}`).join(' L')} Z" fill="${fill}"/>`;
-  const cuts = [...new Set(shapes.map((s) => s.cut))];
+  const cuts = [...new Set(shapes.map((s) => s.cut).filter((cut) => cut != null))];
   const clips = cuts.map((cut) => `<clipPath id="above-${cut}"><rect width="${S}" height="${cut}"/></clipPath><clipPath id="below-${cut}"><rect y="${cut + gap}" width="${S}" height="${S - cut - gap}"/></clipPath>`).join('');
-  const drawn = shapes.map((s) => `<g clip-path="url(#above-${s.cut})">${path(s, s.colours.above)}</g><g clip-path="url(#below-${s.cut})">${path(s, s.colours.below)}</g>`).join('\n');
+  const drawn = shapes.map((s) => s.cut == null ? path(s, s.colours.below) : `<g clip-path="url(#above-${s.cut})">${path(s, s.colours.above)}</g><g clip-path="url(#below-${s.cut})">${path(s, s.colours.below)}</g>`).join('\n');
   return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${S} ${S}">
 <title>${title}</title>
 <defs>${clips}</defs>

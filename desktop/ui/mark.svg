@@ -1,7 +1,11 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
 <title>Fleet</title>
-<defs><clipPath id="above-24"><rect width="64" height="24"/></clipPath><clipPath id="below-24"><rect y="27" width="64" height="37"/></clipPath><clipPath id="above-37"><rect width="64" height="37"/></clipPath><clipPath id="below-37"><rect y="40" width="64" height="24"/></clipPath></defs>
+<defs></defs>
 <rect width="64" height="64" rx="13" fill="#16181d"/>
-<g clip-path="url(#above-24)"><path d="M32 16 L38 32 L32 48 L26 32 Z" fill="#bec0c2"/></g><g clip-path="url(#below-24)"><path d="M32 16 L38 32 L32 48 L26 32 Z" fill="#ffffff"/></g>
-<g clip-path="url(#above-37)"><path d="M7 32 a25 25 0 1 0 50 0 a25 25 0 1 0 -50 0 Z M16 32 a16 16 0 1 0 32 0 a16 16 0 1 0 -32 0 Z" fill-rule="evenodd" fill="#e6c07b"/></g><g clip-path="url(#below-37)"><path d="M7 32 a25 25 0 1 0 50 0 a25 25 0 1 0 -50 0 Z M16 32 a16 16 0 1 0 32 0 a16 16 0 1 0 -32 0 Z" fill-rule="evenodd" fill="#a87d3c"/></g>
+<path d="M12 13 L17 13 L22 18 L17 23 L12 23 L17 18 Z" fill="#5fd787"/>
+<path d="M28 14 L52 14 L52 22 L28 22 Z" fill="#2e9e5b"/>
+<path d="M12 27 L17 27 L22 32 L17 37 L12 37 L17 32 Z" fill="#5fd787"/>
+<path d="M28 28 L44 28 L44 36 L28 36 Z" fill="#2e9e5b"/>
+<path d="M12 41 L17 41 L22 46 L17 51 L12 51 L17 46 Z" fill="#5fd787"/>
+<path d="M28 42 L37 42 L37 50 L28 50 Z" fill="#ffffff"/>
 </svg>
