@@ -24,8 +24,8 @@ export const MARK = {
   gap: 3,
   // The needle, north up, cut a little above the middle; the ring around it, cut as far below it.
   shapes: [
-    { points: [[32, 9], [38, 32], [32, 55], [26, 32]], cut: 24, colours: WHITE },
-    { ring: { cx: 32, cy: 32, inner: 20, outer: 25 }, cut: 37, colours: BRASS },
+    { points: [[32, 16], [38, 32], [32, 48], [26, 32]], cut: 24, colours: WHITE },
+    { ring: { cx: 32, cy: 32, inner: 16, outer: 25 }, cut: 37, colours: BRASS },
   ],
 };
 
