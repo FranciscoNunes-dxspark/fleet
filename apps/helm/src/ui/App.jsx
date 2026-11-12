@@ -70,7 +70,10 @@ export const psQuote = (s) => `'${String(s).replace(/['‘’‚‛]/g, (q) => q
 // often a sibling's mood is looked for. `scratch` is the folder unsaved scripts and selections are run from.
 export function App({ shell, file, cwd = process.cwd(), setTitle, mouse, family = true, moodEvery = 30_000, scratch = join(tmpdir(), `helm-${process.pid}`) }) {
   const { exit } = useApp();
-  const { columns, rows } = useTerminalSize();
+  const { columns, rows: screenRows } = useTerminalSize();
+  // A row short of the screen: Ink clears the whole terminal before every frame as tall as it, which flashes on each
+  // key and each line PowerShell writes (the other apps draw a row short too).
+  const rows = Math.max(10, screenRows - 1);
   const [buf, setBuf] = useState(() => buffer.create(''));
   const [top, setTop] = useState(0);
   const [left, setLeft] = useState(0);
