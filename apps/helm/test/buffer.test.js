@@ -58,3 +58,32 @@ test('the cursor is one inverse character, and sideways scrolling cuts from the 
   assert.equal(withCursor([{ text: 'ab' }], 2).at(-1).text, ' ');
   assert.equal(fromColumn([{ text: 'abc' }, { text: 'def' }], 4).map((s) => s.text).join(''), 'ef');
 });
+
+test('selection: extend, text, remove, columns; typing replaces it', () => {
+  const sel = b.extend(b.extend(b.create('hello\nworld'), 'right'), 'right');
+  assert.equal(b.selectedText(sel), 'he');
+  assert.deepEqual(b.selectedColumns(sel, 0), [0, 2]);
+  assert.equal(b.textOf(b.insert(sel, 'J')), 'Jllo\nworld');
+  assert.equal(b.selectedText(b.selectAll(b.create('a\nb'))), 'a\nb');
+  assert.equal(b.textOf(b.removeSelection(b.selectAll(b.create('a\nb')))), '');
+  assert.equal(b.move(sel, 'right').anchor, undefined);
+});
+
+test('find selects the next match, wrapping, case blind', () => {
+  let s = b.find(b.create('one Two\nthree two'), 'two');
+  assert.deepEqual([s.row, s.col, b.selectedText(s)], [0, 7, 'Two']);
+  s = b.find(s, 'two');
+  assert.deepEqual([s.row, s.col], [1, 9]);
+  s = b.find(s, 'two');
+  assert.deepEqual([s.row, s.col], [0, 7]);
+  assert.equal(b.find(s, 'zzz'), null);
+});
+
+test('matchBracket finds the partner across lines, at or just before the cursor', () => {
+  const s = b.create('if (a) {\n  f(1)\n}');
+  assert.deepEqual(b.matchBracket({ ...s, row: 0, col: 7 }), { row: 2, col: 0 });
+  assert.deepEqual(b.matchBracket({ ...s, row: 2, col: 1 }), { row: 0, col: 7 });
+  assert.deepEqual(b.matchBracket({ ...s, row: 1, col: 4 }), { row: 1, col: 5 });
+  assert.equal(b.matchBracket({ ...s, row: 0, col: 1 }), null);
+  assert.equal(b.matchBracket(b.create('(')), null);
+});

@@ -157,3 +157,66 @@ test('a real PowerShell session keeps variables between runs and marks errors (s
     session.close();
   }
 });
+
+test('shift+arrows select, ctrl+z undoes and ctrl+y redoes, F8 runs the selection', async () => {
+  const session = fakeSession();
+  const app = render(React.createElement(App, { session }));
+  await sleep(30);
+  await type(app, 'abc');
+  await sleep(40);
+  app.stdin.write('\x1b[1;2D'); // shift+left
+  app.stdin.write('\x1b[1;2D');
+  await until(() => app.lastFrame().includes('2 selected'), 'the selection');
+  app.stdin.write('\x1b[19~');
+  await until(() => session.runs.length === 1, 'F8');
+  assert.deepEqual(session.runs, ['bc']);
+  app.stdin.write('\x1a'); // ctrl+z: nothing to undo yet except the typing
+  await until(() => !app.lastFrame().includes('abc'), 'undo');
+  app.stdin.write('\x19'); // ctrl+y
+  await until(() => app.lastFrame().includes('abc'), 'redo');
+  app.unmount();
+});
+
+test('the Console view takes the whole screen; warnings are shown; ctrl+f finds', async () => {
+  const session = fakeSession();
+  session.run = async (code, onLine) => {
+    onLine(`\x03careful`);
+    return { stopped: false };
+  };
+  const app = render(React.createElement(App, { session }));
+  await sleep(30);
+  await type(app, 'needle in a haystack');
+  app.stdin.write('\x1b[15~');
+  await until(() => app.lastFrame().includes('WARNING: careful'), 'the warning');
+  app.stdin.write('\x14'); // ctrl+t
+  await until(() => app.lastFrame().includes('tab complete'), 'the console view');
+  assert.ok(!app.lastFrame().includes('needle'), 'the script is not shown in the console');
+  app.stdin.write('\x14');
+  await until(() => app.lastFrame().includes('needle'), 'back to the script');
+  app.stdin.write('\x06'); // ctrl+f
+  await sleep(20);
+  await type(app, 'hay');
+  app.stdin.write('\r');
+  await until(() => app.lastFrame().includes('3 selected'), 'the match selected');
+  app.unmount();
+});
+
+test('the mouse: a click places the cursor, a drag selects, a tab click switches views', async () => {
+  const session = fakeSession();
+  let emit = () => {};
+  const mouse = { subscribe: (fn) => ((emit = fn), () => {}), claimDrags() {}, enable() {} };
+  const app = render(React.createElement(App, { session, mouse }));
+  await sleep(30);
+  await type(app, 'hello');
+  app.stdin.write('\r');
+  await type(app, 'world');
+  await until(() => app.lastFrame().includes('2:6'), 'the cursor');
+  // The code starts at column 7 of the third row of the screen (top line, title row, then text).
+  emit({ button: 'left', x: 9, y: 2 });
+  await until(() => app.lastFrame().includes('1:3'), 'the click');
+  emit({ drag: true, button: 'left', x: 12, y: 3, from: { x: 8, y: 2 } });
+  await until(() => app.lastFrame().includes('selected'), 'the drag');
+  emit({ button: 'left', x: 20, y: 0 }); // the Console tab
+  await until(() => app.lastFrame().includes('tab complete'), 'the Console view');
+  app.unmount();
+});

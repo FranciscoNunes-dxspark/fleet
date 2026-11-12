@@ -5,6 +5,9 @@ import { spawn } from 'node:child_process';
 
 /** An error line starts with this; the screen draws it red and drops the mark. */
 export const ERROR_MARK = '';
+/** Warning and verbose/debug lines start with these. */
+export const WARN_MARK = '';
+export const VERBOSE_MARK = '';
 export const DONE = '\x01HELM-DONE\x01';
 
 // The loop the process runs. Everything the code writes (any stream) is merged and formatted as the console would.
@@ -12,13 +15,15 @@ const LOOP = `
 $ErrorActionPreference = 'Continue'
 $ProgressPreference = 'SilentlyContinue'
 [Console]::OutputEncoding = [Text.Encoding]::UTF8
-function Write-HelmError($text) { foreach ($l in ($text -split "?
-")) { [Console]::Out.WriteLine([string][char]2 + $l) } }
+function Write-HelmError($text) { foreach ($l in ($text -split "\r?\n")) { [Console]::Out.WriteLine([string][char]2 + $l) } }
+function Write-HelmMark($n, $text) { foreach ($l in ($text -split "\r?\n")) { [Console]::Out.WriteLine([string][char]$n + $l) } }
 while ($null -ne ($line = [Console]::In.ReadLine())) {
   try {
     $code = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($line))
     . ([scriptblock]::Create($code)) *>&1 | ForEach-Object {
       if ($_ -is [Management.Automation.ErrorRecord]) { Write-HelmError $_.Exception.Message }
+      elseif ($_ -is [Management.Automation.WarningRecord]) { Write-HelmMark 3 $_.Message }
+      elseif ($_ -is [Management.Automation.VerboseRecord] -or $_ -is [Management.Automation.DebugRecord]) { Write-HelmMark 4 $_.Message }
       else { ($_ | Out-String -Stream) | ForEach-Object { [Console]::Out.WriteLine($_) } }
     }
   } catch {

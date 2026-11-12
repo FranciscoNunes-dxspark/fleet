@@ -6,6 +6,7 @@ import { VERSION } from './app.js';
 import { App } from './ui/App.jsx';
 import { createSession, locate } from './powershell.js';
 import { appTerminal } from '@fleet/kit/hosted.js';
+import { terminalMouse } from '@fleet/kit/mouse.js';
 
 const args = process.argv.slice(2);
 
@@ -17,12 +18,12 @@ if (args.includes('-v') || args.includes('--version')) {
 if (args.includes('-h') || args.includes('--help')) {
   console.log(`helm [script.ps1]
 
-A PowerShell script editor in the terminal, like the ISE: a script pane on top, the output of what
-ran below it, and a console prompt under that, all over one PowerShell session (pwsh when it is
+A PowerShell script editor in the terminal, like the ISE: a Script view (the script over its output)
+and a Console view (commands, tab completion, history), all over one PowerShell session (pwsh when it is
 installed, else Windows PowerShell), so variables and functions stay from one run to the next.
 
 Inside: F5 runs the script, F8 the current line, ctrl+s saves, ctrl+o opens, ctrl+t moves between
-the script and the console, esc stops a run, ctrl+q quits.`);
+the views, ctrl+f finds, F1 lists the keys, esc stops a run, ctrl+q quits.`);
   process.exit(0);
 }
 
@@ -43,7 +44,10 @@ process.on('exit', () => process.stdout.write('\x1b]0;\x07\x1b[23;0t\x1b[?1049l'
 for (const sig of ['SIGINT', 'SIGTERM', 'SIGHUP']) process.on(sig, () => process.exit(0));
 const setTitle = (title) => process.stdout.write(`\x1b]0;${title.replace(/[\x00-\x1f\x7f]/g, '')}\x07`);
 
-const app = render(<App session={session} file={args.find((a) => !a.startsWith('-'))} cwd={cwd} setTitle={setTitle} />, { exitOnCtrlC: false, stdin, stdout });
+// Clicks and the wheel, where the terminal can report them; set up before rendering, so mouse reports never reach Ink as keys.
+const mouse = await terminalMouse(stdin, stdout);
+
+const app = render(<App session={session} file={args.find((a) => !a.startsWith('-'))} cwd={cwd} setTitle={setTitle} mouse={mouse} />, { exitOnCtrlC: false, stdin, stdout: mouse?.stdout ?? stdout });
 await app.waitUntilExit();
 session?.close();
 process.exit(0);
