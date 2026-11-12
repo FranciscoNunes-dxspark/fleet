@@ -6,6 +6,8 @@ import * as buffer from '../buffer.js';
 import { fromColumn, highlight, withCursor, withSelection } from '../highlight.js';
 import { ERROR_MARK, VERBOSE_MARK, WARN_MARK } from '../powershell.js';
 import { HELP } from '../help.js';
+import { FACES, moodFor } from '../pet.js';
+import { familyMood, reactionTo } from '../moods.js';
 import { theme } from '../theme.js';
 import { VERSION } from '../app.js';
 import { useKeyTranslation, useTerminalSize } from '@fleet/kit/ui/hooks.js';
@@ -13,6 +15,7 @@ import { Panel, PromptBox, Row, promptHeight } from '@fleet/kit/ui/parts.jsx';
 import { StatusLine, topLine } from '@fleet/kit/ui/shell.jsx';
 import { fitSegments } from '@fleet/kit/text.js';
 import { copyToClipboard } from '@fleet/kit/clipboard.js';
+import { logActivity, readMoods, writeMood } from '@fleet/kit/family.js';
 
 const GUTTER = 5;
 const MAX_OUTPUT = 5000;
@@ -69,7 +72,9 @@ function tailRows(lines, end, rows, width) {
 
 // `session` is powershell.js's createSession (or null when no PowerShell is installed); `file` is
 // opened at the start. `setTitle` comes from cli.jsx; tests leave it out.
-export function App({ session, file, cwd = process.cwd(), setTitle, mouse }) {
+// `family: false` keeps the app out of the family's mood and activity files (the tests' way); `moodEvery` is how
+// often a sibling's mood is looked for.
+export function App({ session, file, cwd = process.cwd(), setTitle, mouse, family = true, moodEvery = 30_000 }) {
   const { exit } = useApp();
   const { columns, rows } = useTerminalSize();
   const [buf, setBuf] = useState(() => buffer.create(''));
@@ -110,6 +115,11 @@ export function App({ session, file, cwd = process.cwd(), setTitle, mouse }) {
   const redoStack = useRef([]);
   const lastEdit = useRef(0);
   const completion = useRef(null);
+  // The newest result ({ ok, at }) for Spoke's mood, which wears off; a sibling's mood Spoke reacts to until esc.
+  const [last, setLast] = useState(null);
+  const [, setMoodTick] = useState(0);
+  const [reaction, setReaction] = useState(null);
+  const seenMoods = useRef(new Set());
   const [running, setRunning] = useState(false);
   const quitArmed = useRef(false);
   const runningRef = useRef(false);
@@ -206,36 +216,64 @@ export function App({ session, file, cwd = process.cwd(), setTitle, mouse }) {
     return () => session?.close();
   }, []);
 
+  useEffect(() => {
+    if (!last) return;
+    const t = setTimeout(() => setMoodTick((n) => n + 1), 8100);
+    return () => clearTimeout(t);
+  }, [last]);
+
+  useEffect(() => {
+    if (!family || !moodEvery) return setReaction(null);
+    const look = () => {
+      const r = reactionTo(readMoods('helm'), seenMoods.current);
+      if (!r) return;
+      seenMoods.current.add(r.key);
+      setReaction(r);
+    };
+    look();
+    const t = setInterval(look, moodEvery);
+    return () => clearInterval(t);
+  }, [family, moodEvery]);
+
   useKeyTranslation((input) => FUNCTION_KEYS[input] ?? input);
 
-  const execute = async (code, label) => {
+  // `did` is what the family's activity log says about it: which script, never the code.
+  const execute = async (code, label, did = 'Ran a command') => {
     if (runningRef.current || !code.trim()) return;
     if (!session) return say('err', 'No PowerShell found.');
     runningRef.current = true;
     setRunning(true);
     setBack(0);
     say('in', label);
+    let failed = false;
     try {
       const r = await session.run(code, (text) => {
-        if (text.startsWith(ERROR_MARK)) say('err', text.slice(1));
+        if (text.startsWith(ERROR_MARK)) {
+          failed = true;
+          say('err', text.slice(1));
+        }
         else if (text.startsWith(WARN_MARK)) say('warn', `WARNING: ${text.slice(1)}`);
         else if (text.startsWith(VERBOSE_MARK)) say('verbose', text.slice(1));
         else say('out', text);
       });
+      if (r.stopped) failed = true;
       if (r.stopped) say('info', 'Stopped. The session starts again with the next run, without its variables.');
     } catch (err) {
+      failed = true;
       say('err', String(err.message ?? err));
     }
     runningRef.current = false;
     setRunning(false);
+    setLast({ ok: !failed, at: Date.now() });
+    if (family) logActivity('helm', { text: failed ? `${did} (it failed)` : did, kind: failed ? 'error' : 'info', project: cwd });
   };
 
-  const runScript = () => execute(buffer.textOf(bufRef.current), `▶ Run ${path ? basename(path) : 'script'}`);
+  const runScript = () => execute(buffer.textOf(bufRef.current), `▶ Run ${path ? basename(path) : 'script'}`, `Ran ${path ? basename(path) : 'a script'}`);
   const runLine = () => {
     const picked = buffer.selectedText(bufRef.current);
-    if (picked) return execute(picked, `▶ selection (${picked.split('\n').length} line${picked.includes('\n') ? 's' : ''})`);
+    if (picked) return execute(picked, `▶ selection (${picked.split('\n').length} line${picked.includes('\n') ? 's' : ''})`, 'Ran a selection');
     const line = buffer.currentLine(bufRef.current);
-    return execute(line, `▶ ${line.trim()}`);
+    return execute(line, `▶ ${line.trim()}`, 'Ran a line');
   };
 
   function openFile(name) {
@@ -368,6 +406,7 @@ export function App({ session, file, cwd = process.cwd(), setTitle, mouse }) {
 
   useInput((input, key) => {
     if (help && !(key.ctrl && input === 'q')) return setHelp(false);
+    if (key.escape && reaction && !runningRef.current && !pathRef.current) return setReaction(null);
     if (key.ctrl && input === 'q') {
       if (dirtyRef.current && !quitArmed.current) {
         quitArmed.current = true;
@@ -475,7 +514,12 @@ export function App({ session, file, cwd = process.cwd(), setTitle, mouse }) {
   const end = Math.max(0, output.length - back);
   const shown = tailRows(output, end, viewRows, inner);
   const outputRowsEls = shown.map((l, i) => <Row key={i} pointer={false} width={inner} segments={[{ text: l.text, color: OUTPUT_COLOR[l.kind]() }]} />);
-  const top1 = topLine({ title: 'Helm', views: VIEWS, view: focus === 'console' && pathMode ? returnTo.current : focus, context: headerContext({ path, dirty, session, running }), width: columns, compact: true });
+  const mood = moodFor({ state: { running, none: !session }, last });
+  const feeling = familyMood({ mood });
+  useEffect(() => {
+    if (family) writeMood('helm', feeling);
+  }, [feeling.mood, feeling.reason, family]);
+  const top1 = topLine({ face: FACES[mood], title: 'Helm', views: VIEWS, view: focus === 'console' && pathMode ? returnTo.current : focus, context: headerContext({ path, dirty, session, running }), width: columns, compact: true });
 
   geo.current = { top, left, view: focus === 'console' && !pathMode ? 'console' : 'script', scriptRows, scriptH, viewRows, tabs: top1.tabs };
   let main;
@@ -514,7 +558,7 @@ export function App({ session, file, cwd = process.cwd(), setTitle, mouse }) {
       <Row pointer={false} width={columns} segments={top1.segments} />
       {main}
       {showPrompt && !help ? <PromptBox value={prompt.value} cursor={prompt.cursor} focused width={columns} placeholder={pathMode ? PATH_PLACEHOLDER[pathMode] : 'PowerShell command (tab completes, ctrl+t leaves)'} bang={false} /> : null}
-      <StatusLine message={pathMode ? PATH_PLACEHOLDER[pathMode] : running ? 'running… (esc stops)' : ''} tone={running && !pathMode ? 'warn' : undefined} keys={pathMode ? '↵ go · esc cancel' : HINTS[focus]} width={columns} />
+      <StatusLine face={FACES[reaction && !running ? (reaction.mood === 'happy' ? 'happy' : 'worried') : mood]} news={Boolean(reaction) && !running && !pathMode} message={pathMode ? PATH_PLACEHOLDER[pathMode] : running ? 'running… (esc stops)' : reaction ? [{ text: reaction.text }, { text: '  esc', color: theme.dim }] : ''} tone={running && !pathMode ? 'warn' : undefined} keys={pathMode ? '↵ go · esc cancel' : HINTS[focus]} width={columns} />
     </Box>
   );
 }

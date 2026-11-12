@@ -3,10 +3,10 @@
 // (../proposals.js), which Fleet shows in its bar and its proposals panel (the prefix and P); ↵ there
 // types the line into the app's prompt, and only the person's own ↵ in the app runs it.
 // `proposal_status` says what became of one.
-import { APP_NAMES, FAMILY } from '@fleet/kit/family.js';
+import { APP_NAMES } from '@fleet/kit/family.js';
 import { ToolError } from '@fleet/kit/mcp.js';
 import { stamp } from './bound.js';
-import { MAX_AGE, MAX_LINE, checkProposal, readProposal, writeProposal } from '../proposals.js';
+import { MAX_AGE, MAX_LINE, PROMPT_APPS, checkProposal, readProposal, writeProposal } from '../proposals.js';
 
 const minutes = Math.round(MAX_AGE / 60_000);
 
@@ -17,7 +17,7 @@ export const proposalTools = [
     inputSchema: {
       type: 'object',
       properties: {
-        app: { type: 'string', enum: FAMILY, description: 'The app whose prompt the line is for' },
+        app: { type: 'string', enum: PROMPT_APPS, description: 'The app whose prompt the line is for' },
         line: { type: 'string', description: 'The slash command, as typed into that app (it starts with /)' },
         why: { type: 'string', description: 'Why: one or two sentences the person reads first' },
       },

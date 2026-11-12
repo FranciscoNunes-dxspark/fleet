@@ -35,6 +35,10 @@ In the Script view: arrows, Home (first character, then the line start), End, Pg
 
 In the Console view: type a command and press ↵; Tab completes it with PowerShell's own completion (commands, parameters, paths, variables; Tab again for the next match); ↑↓ recall earlier ones; PgUp/PgDn scroll. The output is the same as the Script view's, wrapped to the width. Errors are red, warnings yellow, verbose and debug lines dim.
 
+## Spoke
+
+Helm's mascot is Spoke, a ship's cat: its face in the top line and the status line looks about, then happy or worried after a run (a script that wrote an error, or was stopped, worries it), and says so when another app's mascot is worried, sad or happy (esc clears it). Each run is told to the other apps as *which script* ran and whether it failed, never its code or output.
+
 ## Not there yet
 
 Several script tabs, breakpoints, a command browser, and an interactive terminal (programs that take over the screen, or `Read-Host`).

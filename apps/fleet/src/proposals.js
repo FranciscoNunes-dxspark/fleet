@@ -12,6 +12,9 @@ import { mkdirSync, readdirSync, readFileSync, renameSync, rmSync, statSync, wri
 import { join } from 'node:path';
 import { FAMILY, familyDir, redactSecrets } from '@fleet/kit/family.js';
 
+/** The apps with a prompt that takes slash commands: Helm has none (a script editor), so nothing is proposed to it. */
+export const PROMPT_APPS = FAMILY.filter((a) => a !== 'helm');
+
 export const MAX_LINE = 500;
 export const MAX_WHY = 1000;
 /** How long a proposal waits: older ones drop off (the panel, the bar, and their files). */
@@ -23,9 +26,9 @@ export const proposalsDir = (home = familyDir()) => join(home, 'proposals');
 
 /**
  * Checks what Claude proposed: { ok: true, proposal: { app, line, why } } or { ok: false, error }, the
- * error saying what to change. `ids` are the apps a proposal may name (the family's).
+ * error saying what to change. `ids` are the apps a proposal may name (the family's with a prompt).
  */
-export function checkProposal({ app, line, why } = {}, { ids = FAMILY } = {}) {
+export function checkProposal({ app, line, why } = {}, { ids = PROMPT_APPS } = {}) {
   const to = String(app ?? '').trim().toLowerCase();
   if (!ids.includes(to)) return { ok: false, error: `"${app ?? ''}" isn't an app of the family: ${ids.join(', ')}.` };
   const text = String(line ?? '').trim();
