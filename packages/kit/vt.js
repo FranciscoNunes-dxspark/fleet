@@ -652,3 +652,24 @@ export class VirtualTerminal {
     return this.modes.get(25) !== false;
   }
 }
+
+/**
+ * What a view of a shell draws (Mooring's Console, Helm's): the scrollback and then the screen of `vt` as ANSI rows,
+ * the `height` of them that end `back` rows above the bottom, with the cursor (a reversed cell) when `cursor` says it
+ * is showing and the view is at the bottom. Rows past what the terminal has are left out.
+ */
+export function screenLines(vt, { height, back = 0, cursor = false }) {
+  const kept = vt.history.length;
+  const total = kept + vt.rows;
+  const end = Math.max(0, total - back);
+  const start = Math.max(0, end - height);
+  const lines = [];
+  for (let i = start; i < end; i++) {
+    if (i < kept) lines.push(vt.historyAnsi(i));
+    else lines.push(vt.rowAnsi(i - kept, cursor && back === 0 && i - kept === vt.y && vt.cursorShown() ? vt.x : -1));
+  }
+  return lines;
+}
+
+/** The screen of `vt` as plain text (what a view copies): the rows without trailing blanks, and no blank rows at the end. */
+export const screenText = (vt) => Array.from({ length: vt.rows }, (_, y) => vt.rowText(y)).join('\n').replace(/\s+$/, '');

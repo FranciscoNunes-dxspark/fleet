@@ -2,8 +2,6 @@
 import { test, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { readActivity, readMoods } from '@fleet/kit/family.js';
-import { VirtualTerminal } from '@fleet/kit/vt.js';
-import { consoleLines, screenText } from '../src/ui/ConsoleView.jsx';
 import { familyMood, reactionTo } from '../src/moods.js';
 import { FACES, PALETTE, moodFor, moodLine, petPixels, petRows, troubles } from '../src/pet.js';
 import { KEYS, shows, start, tempHome, type, until } from './helpers.js';
@@ -61,18 +59,6 @@ test('exit ends the shell, the screen stays, and ↵ starts another', async () =
   app.stdin.write(KEYS.enter);
   await until(() => app.host.state.calls.filter((c) => c[0] === 'terminal').length === 2, 'a new shell');
   app.unmount();
-});
-
-test('console lines: the scrollback then the screen, looked back through, with the cursor showing', () => {
-  const vt = new VirtualTerminal(6, 3, { scrollback: 10 });
-  vt.write('a\r\nb\r\nc\r\nd\r\ne');
-  const plain = (lines) => lines.map((l) => l.replace(/\x1b\[[0-9;]*m/g, '').trimEnd());
-  assert.deepEqual(plain(consoleLines(vt, { height: 3 })), ['c', 'd', 'e']);
-  assert.deepEqual(plain(consoleLines(vt, { height: 3, back: 2 })), ['a', 'b', 'c']);
-  assert.deepEqual(plain(consoleLines(vt, { height: 10 })), ['a', 'b', 'c', 'd', 'e']);
-  assert.match(consoleLines(vt, { height: 3, cursor: true }).at(-1), /\x1b\[7m \x1b\[27m/);
-  assert.doesNotMatch(consoleLines(vt, { height: 3, back: 1, cursor: true }).join(''), /\x1b\[7m/);
-  assert.equal(screenText(vt), 'c\nd\ne');
 });
 
 test("Tug's art is whole: every row 16 wide, only palette letters, every mood", () => {

@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { VirtualTerminal } from '../vt.js';
+import { VirtualTerminal, screenLines, screenText } from '../vt.js';
 
 test('rows pushed off the top are kept as history when asked, and not on the alternate screen', () => {
   const vt = new VirtualTerminal(5, 2, { scrollback: 3 });
@@ -63,4 +63,16 @@ test('a stream draws the same however its chunks are cut, colours looked up agai
   assert.equal(other.style, '1;38;2;1;2;3');
   other.write('\x1b[22m');
   assert.equal(other.style, '38;2;1;2;3', 'a style looked up is never changed in place by the next');
+});
+
+test('screenLines: the scrollback then the screen, looked back through, with the cursor showing', () => {
+  const vt = new VirtualTerminal(6, 3, { scrollback: 10 });
+  vt.write('a\r\nb\r\nc\r\nd\r\ne');
+  const plain = (lines) => lines.map((l) => l.replace(/\x1b\[[0-9;]*m/g, '').trimEnd());
+  assert.deepEqual(plain(screenLines(vt, { height: 3 })), ['c', 'd', 'e']);
+  assert.deepEqual(plain(screenLines(vt, { height: 3, back: 2 })), ['a', 'b', 'c']);
+  assert.deepEqual(plain(screenLines(vt, { height: 10 })), ['a', 'b', 'c', 'd', 'e']);
+  assert.match(screenLines(vt, { height: 3, cursor: true }).at(-1), /\x1b\[7m \x1b\[27m/);
+  assert.doesNotMatch(screenLines(vt, { height: 3, back: 1, cursor: true }).join(''), /\x1b\[7m/);
+  assert.equal(screenText(vt), 'c\nd\ne');
 });
