@@ -1,7 +1,7 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
 <title>Keel</title>
-<defs><clipPath id="chevron-a"><rect width="64" height="23.5"/></clipPath><clipPath id="chevron-b"><rect y="27" width="64" height="37"/></clipPath><clipPath id="bar-a"><rect width="64" height="37"/></clipPath><clipPath id="bar-b"><rect y="40.5" width="64" height="23.5"/></clipPath></defs>
-<rect width="64" height="64" rx="13" fill="#16181d"/>
-<g clip-path="url(#chevron-a)"><path d="M15 13 L26.5 13 L37 32 L26.5 51 L15 51 L25.5 32 Z" fill="#3d6cc0"/></g><g clip-path="url(#chevron-b)"><path d="M15 13 L26.5 13 L37 32 L26.5 51 L15 51 L25.5 32 Z" fill="#4c8dff"/></g>
-<g clip-path="url(#bar-a)"><rect x="40" y="13" width="9" height="38" rx="2" fill="#ffffff"/></g><g clip-path="url(#bar-b)"><rect x="40" y="13" width="9" height="38" rx="2" fill="#bec0c2"/></g>
+<defs><linearGradient id="tile" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#4682ea"/><stop offset="1" stop-color="#2a5fc6"/></linearGradient><clipPath id="chevron-a"><rect width="64" height="23.5"/></clipPath><clipPath id="chevron-b"><rect y="27" width="64" height="37"/></clipPath><clipPath id="bar-a"><rect width="64" height="37"/></clipPath><clipPath id="bar-b"><rect y="40.5" width="64" height="23.5"/></clipPath></defs>
+<rect width="64" height="64" rx="13" fill="url(#tile)"/>
+<g clip-path="url(#chevron-a)"><path d="M15 13 L26.5 13 L37 32 L26.5 51 L15 51 L25.5 32 Z" fill="#a9c7ff"/></g><g clip-path="url(#chevron-b)"><path d="M15 13 L26.5 13 L37 32 L26.5 51 L15 51 L25.5 32 Z" fill="#ffffff"/></g>
+<g clip-path="url(#bar-a)"><rect x="40" y="13" width="9" height="38" rx="2" fill="#ffffff"/></g><g clip-path="url(#bar-b)"><rect x="40" y="13" width="9" height="38" rx="2" fill="#a9c7ff"/></g>
 </svg>

@@ -1,11 +1,11 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
 <title>Fleet</title>
-<defs></defs>
-<rect width="64" height="64" rx="13" fill="#16181d"/>
-<path d="M12 13 L17 13 L22 18 L17 23 L12 23 L17 18 Z" fill="#5fd787"/>
-<path d="M28 14 L52 14 L52 22 L28 22 Z" fill="#2e9e5b"/>
-<path d="M12 27 L17 27 L22 32 L17 37 L12 37 L17 32 Z" fill="#5fd787"/>
-<path d="M28 28 L44 28 L44 36 L28 36 Z" fill="#2e9e5b"/>
-<path d="M12 41 L17 41 L22 46 L17 51 L12 51 L17 46 Z" fill="#5fd787"/>
+<defs><linearGradient id="tile" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#33a865"/><stop offset="1" stop-color="#1d7a44"/></linearGradient></defs>
+<rect width="64" height="64" rx="13" fill="url(#tile)"/>
+<path d="M12 13 L17 13 L22 18 L17 23 L12 23 L17 18 Z" fill="#ffffff"/>
+<path d="M28 14 L52 14 L52 22 L28 22 Z" fill="#a3e6bd"/>
+<path d="M12 27 L17 27 L22 32 L17 37 L12 37 L17 32 Z" fill="#ffffff"/>
+<path d="M28 28 L44 28 L44 36 L28 36 Z" fill="#a3e6bd"/>
+<path d="M12 41 L17 41 L22 46 L17 51 L12 51 L17 46 Z" fill="#ffffff"/>
 <path d="M28 42 L37 42 L37 50 L28 50 Z" fill="#ffffff"/>
 </svg>
