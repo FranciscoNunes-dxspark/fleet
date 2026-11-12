@@ -7,7 +7,8 @@
 
 export const MARK = {
   size: 64,
-  tile: { radius: 13, fill: '#2f6bd8' },
+  // The tile shades from `top` down to `bottom`, a slight gradient as Switchyard's tile has.
+  tile: { radius: 13, top: '#4682ea', bottom: '#2a5fc6' },
   /** How tall each cut is. */
   gap: 3.5,
   /** Each shape's cut starts at `cut`; it takes `colours.above` over it and `colours.below` under it. */

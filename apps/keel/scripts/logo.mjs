@@ -24,6 +24,12 @@ const out = (path, data) => {
 };
 
 const hex = (h) => [parseInt(h.slice(1, 3), 16), parseInt(h.slice(3, 5), 16), parseInt(h.slice(5, 7), 16), 255];
+/** The tile's colour `v` down it, from its top to its bottom. */
+const tileAt = (v) => {
+  const t = Math.min(1, Math.max(0, v / MARK.size));
+  const [a, b] = [hex(MARK.tile.top), hex(MARK.tile.bottom)];
+  return a.map((c, i) => Math.round(c + (b[i] - c) * t));
+};
 
 // The Azure DevOps mark in white on its blue rounded square. It's drawn at twice Pinch's
 // resolution, the coarsest the mark still reads at.
@@ -253,9 +259,10 @@ function markRows(size, { tile = 'round', scale = 1, colour } = {}) {
       if (gy >= shape.cut && gy < shape.cut + MARK.gap) return null;
       return hex(colour || shape.colours[gy < shape.cut ? 'above' : 'below']);
     };
-    if (inRound(gx, gy, MARK.bar)) return paint(MARK.bar) ?? (tile !== 'none' && inRound(u, v, tileShape) ? hex(MARK.tile.fill) : null);
-    if (inPolygon(gx, gy, MARK.chevron.points)) return paint(MARK.chevron) ?? (tile !== 'none' && inRound(u, v, tileShape) ? hex(MARK.tile.fill) : null);
-    if (tile !== 'none' && inRound(u, v, tileShape)) return hex(MARK.tile.fill);
+    const onTile = () => (tile !== 'none' && inRound(u, v, tileShape) ? tileAt(v) : null);
+    if (inRound(gx, gy, MARK.bar)) return paint(MARK.bar) ?? onTile();
+    if (inPolygon(gx, gy, MARK.chevron.points)) return paint(MARK.chevron) ?? onTile();
+    return onTile();
     return null;
   };
   const N = 4;
@@ -284,8 +291,8 @@ function markSvg() {
   const halves = (id, shape, draw) => `<g clip-path="url(#${id}-a)">${draw(shape.colours.above)}</g><g clip-path="url(#${id}-b)">${draw(shape.colours.below)}</g>`;
   return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${S} ${S}">
 <title>Keel</title>
-<defs>${clips('chevron', chevron.cut)}${clips('bar', bar.cut)}</defs>
-<rect width="${S}" height="${S}" rx="${tile.radius}" fill="${tile.fill}"/>
+<defs><linearGradient id="tile" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${tile.top}"/><stop offset="1" stop-color="${tile.bottom}"/></linearGradient>${clips('chevron', chevron.cut)}${clips('bar', bar.cut)}</defs>
+<rect width="${S}" height="${S}" rx="${tile.radius}" fill="url(#tile)"/>
 ${halves('chevron', chevron, path)}
 ${halves('bar', bar, rect)}
 </svg>

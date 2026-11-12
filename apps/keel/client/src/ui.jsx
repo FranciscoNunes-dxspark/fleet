@@ -37,11 +37,14 @@ export function Logo({ size = 28, mood = 'idle', title }) {
   return (
     <svg className={`brand-mark brand-mark-${mood}`} width={size} height={size} viewBox={`0 0 ${MARK.size} ${MARK.size}`} focusable="false" {...(title ? { role: 'img', 'aria-label': title } : { 'aria-hidden': true })}>
       {title && <title>{title}</title>}
-      <defs>{clips('c', chevron.cut)}{clips('b', bar.cut)}</defs>
-      <rect width={MARK.size} height={MARK.size} rx={tile.radius} fill={tile.fill} />
+      <defs>
+        <linearGradient id={`${id}t`} x1="0" y1="0" x2="0" y2="1"><stop offset="0" stopColor={tile.top} /><stop offset="1" stopColor={tile.bottom} /></linearGradient>
+        {clips('c', chevron.cut)}{clips('b', bar.cut)}
+      </defs>
+      <rect width={MARK.size} height={MARK.size} rx={tile.radius} fill={`url(#${id}t)`} />
       {halves('c', chevron, (fill) => <path d={CHEVRON} fill={fill} />)}
       {halves('b', bar, (fill) => <rect className="mark-cursor" x={bar.x} y={bar.y} width={bar.w} height={bar.h} rx={bar.r} fill={fill} />)}
-      {mood === 'worried' && <circle className="mark-alert" cx="54" cy="10" r="8" stroke={tile.fill} strokeWidth="3" />}
+      {mood === 'worried' && <circle className="mark-alert" cx="54" cy="10" r="8" stroke={tile.top} strokeWidth="3" />}
     </svg>
   );
 }

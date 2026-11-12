@@ -24,7 +24,8 @@ const rect = (x, y, w, h) => [[x, y], [x + w, y], [x + w, y + h], [x, y + h]];
 
 export const MARK = {
   size: 64,
-  tile: { radius: 13, fill: '#23894f' },
+  // The tile shades from `top` down to `bottom`, a slight gradient as Switchyard's tile has.
+  tile: { radius: 13, top: '#33a865', bottom: '#1d7a44' },
   /** How tall each cut is. */
   gap: 3,
   // Three lines 14 apart, each 8 high: a prompt, then what was typed, the last line only the cursor.
@@ -39,6 +40,12 @@ export const MARK = {
 };
 
 const rgb = (hex) => [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16));
+/** The tile's colour `v` down it, from its top to its bottom. */
+const tileAt = (v) => {
+  const t = Math.min(1, Math.max(0, v / MARK.size));
+  const [a, b] = [rgb(MARK.tile.top), rgb(MARK.tile.bottom)];
+  return a.map((c, i) => Math.round(c + (b[i] - c) * t));
+};
 
 const inRound = (x, y, { x: rx, y: ry, w, h, r }) => {
   if (x < rx || y < ry || x > rx + w || y > ry + h) return false;
@@ -68,7 +75,7 @@ const inRing = (x, y, { cx, cy, inner, outer, from = 0, to = 360 }) => {
 function markRows(size, { tile = true } = {}) {
   const S = MARK.size;
   const tileShape = { x: 0, y: 0, w: S, h: S, r: MARK.tile.radius };
-  const onTile = (u, v) => (tile && inRound(u, v, tileShape) ? rgb(MARK.tile.fill) : null);
+  const onTile = (u, v) => (tile && inRound(u, v, tileShape) ? tileAt(v) : null);
   const sample = (u, v) => {
     // In a shape's cut there's only the tile; either side of it, the shape's two tones.
     for (const shape of MARK.shapes) {
@@ -124,8 +131,8 @@ export function markSvg({ tile = true, title = 'Fleet' } = {}) {
   const drawn = shapes.map((s) => s.cut == null ? path(s, s.colours.below) : `<g clip-path="url(#above-${s.cut})">${path(s, s.colours.above)}</g><g clip-path="url(#below-${s.cut})">${path(s, s.colours.below)}</g>`).join('\n');
   return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${S} ${S}">
 <title>${title}</title>
-<defs>${clips}</defs>
-${tile ? `<rect width="${S}" height="${S}" rx="${MARK.tile.radius}" fill="${MARK.tile.fill}"/>\n` : ''}${drawn}
+<defs><linearGradient id="tile" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${MARK.tile.top}"/><stop offset="1" stop-color="${MARK.tile.bottom}"/></linearGradient>${clips}</defs>
+${tile ? `<rect width="${S}" height="${S}" rx="${MARK.tile.radius}" fill="url(#tile)"/>\n` : ''}${drawn}
 </svg>
 `;
 }
