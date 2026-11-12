@@ -63,3 +63,24 @@ export function fromColumn(segments, left) {
   }
   return out;
 }
+
+/** Marks the columns [from, to) as selected, splitting the segments at its edges. */
+export function withSelection(segments, from, to, mark = { inverse: true }) {
+  const out = [];
+  let at = 0;
+  for (const seg of segments) {
+    const end = at + seg.text.length;
+    const a = Math.max(from, at);
+    const z = Math.min(to, end);
+    if (a >= z) out.push(seg);
+    else {
+      if (a > at) out.push({ ...seg, text: seg.text.slice(0, a - at) });
+      out.push({ ...seg, text: seg.text.slice(a - at, z - at), ...mark });
+      if (z < end) out.push({ ...seg, text: seg.text.slice(z - at) });
+    }
+    at = end;
+  }
+  // A selected line break past the end shows as a selected space.
+  if (to > at && from <= at) out.push({ text: ' ', ...mark });
+  return out;
+}
