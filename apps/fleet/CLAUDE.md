@@ -11,7 +11,7 @@ npm test                                                       # here; npm run t
 node --import @fleet/kit/register.js --import ./src/app.js --test test/keys.test.js     # one file
 npm start                                                      # run from the checkout (needs a real TTY): node bin/fleet.js [app] [args…]
 npm run build                                                  # Bun-compiled executable for this machine → dist/fleet-<platform>, all sixteen apps inside, each its own chunk (the kit's build splits on dynamic imports, so `--run <app>` parses only that app: about 45 ms for the host to start rather than 220, 110–130 for an app rather than 270–290)
-node scripts/logo.js                                           # regenerate the mark (»|, Keel's >| family): assets/, and the desktop window's icons and mark.svg
+node scripts/logo.js                                           # regenerate the mark (three prompt lines, the last a cursor): assets/, and the desktop window's icons and mark.svg
 powershell -File installer\build.ps1 [-Version 1.2.3]        # Windows, after npm run build: dist\fleet-windows-x64-setup.exe (needs Inno Setup 6)
 ```
 
