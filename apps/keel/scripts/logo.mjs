@@ -1,5 +1,5 @@
 // Draws Keel's icons. The web app's are the mark in client/src/mark.js, a K turned round into a
-// prompt on a graphite tile, each of its shapes cut across; the terminal app's are Pinch, Keel's crab, from the pixels
+// prompt on a blue tile, each of its shapes cut across; the terminal app's are Pinch, Keel's crab, from the pixels
 // in client/src/pinch.js, with a pixel-art Azure DevOps mark as a badge in the bottom-right corner,
 // the way Tiller and Trawl badge theirs with Git and SQL:
 //   assets/pinch.svg, pinch.png               the README and social preview

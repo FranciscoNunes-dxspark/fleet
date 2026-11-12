@@ -1,7 +1,6 @@
 // Draws Fleet's mark: a command line, three prompts (>) one under another, each with what was typed
 // after it, shorter each time, and the last only the cursor. It's drawn the way Keel's mark is, flat
-// shapes on a graphite tile. Green, a terminal's colour, is one no mark beside it on a taskbar uses
-// (Keel's is blue). One drawing,
+// shapes on a tile of Fleet's own colour, a terminal's green (Keel's is blue). One drawing,
 // written to:
 //   assets/logo.svg, logo.png (512 px)          the README
 //   assets/logo.ico                              the Windows executable and its shortcuts (the kit's
@@ -15,8 +14,8 @@ import { deflateSync } from 'node:zlib';
 
 // Each shape's two tones, the deeper one `above` its cut; a shape with no cut is its `below` tone.
 const tone = (hex) => ({ above: hex, below: hex });
-const PROMPT = tone('#5fd787');
-const TYPED = tone('#2e9e5b');
+const PROMPT = tone('#ffffff');
+const TYPED = tone('#a3e6bd');
 const CURSOR = tone('#ffffff');
 
 /** A prompt's chevron: `x` its back, `cy` its middle, `h` half its height, `w` an arm's width, `d` how far its point leads. */
@@ -25,7 +24,7 @@ const rect = (x, y, w, h) => [[x, y], [x + w, y], [x + w, y + h], [x, y + h]];
 
 export const MARK = {
   size: 64,
-  tile: { radius: 13, fill: '#16181d' },
+  tile: { radius: 13, fill: '#23894f' },
   /** How tall each cut is. */
   gap: 3,
   // Three lines 14 apart, each 8 high: a prompt, then what was typed, the last line only the cursor.
