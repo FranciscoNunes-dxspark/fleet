@@ -130,11 +130,12 @@ export function App({ config: initialConfig, provider = createDrill(), cwd: star
   // The function that stops watching the folder, while w watches it.
   const [watching, setWatchingState] = useState(null);
   const watchingRef = useRef(null);
-  // The runners' output, as a terminal draws it (the kit's vt.js), for the Output view; `outputTick` redraws it.
+  // The runners' output, as a terminal draws it (the kit's vt.js), for the Output view. Who hears that it changed is
+  // the Output view's rows (OutputView's `changes`), not the whole app, so a run's output draws only those again.
   const vtRef = useRef(null);
   if (!vtRef.current) vtRef.current = new VirtualTerminal(Math.max(20, columns - 2), 200, { scrollback: SCROLLBACK });
   const [outputTitle, setOutputTitle] = useState(null);
-  const [, setOutputTick] = useState(0);
+  const outputChanges = useRef(new Set()).current;
   const outputTimer = useRef(null);
   // The failure the Failures view opens on, when the Tree picks one.
   const [pick, setPick] = useState(null);
@@ -394,13 +395,14 @@ export function App({ config: initialConfig, provider = createDrill(), cwd: star
         vt.history = [];
         vt.resize(Math.max(20, columnsRef.current - 2), 200);
         setOutputTitle(title);
+        for (const changed of outputChanges) changed();
       },
       write: (text) => {
         vtRef.current.write(text);
         if (outputTimer.current || !alive.current) return;
         outputTimer.current = setTimeout(() => {
           outputTimer.current = null;
-          if (alive.current) setOutputTick((n) => n + 1);
+          if (alive.current) for (const changed of outputChanges) changed();
         }, 100);
       },
     },
@@ -752,7 +754,7 @@ export function App({ config: initialConfig, provider = createDrill(), cwd: star
   } else if (view === 'flaky') {
     main = <FlakyView flaky={flaky} run={run} ctx={ctx} width={W} height={mainH} active={viewActive} />;
   } else if (view === 'output') {
-    main = <OutputView vt={vtRef.current} title={outputTitle} ctx={ctx} width={W} height={mainH} active={viewActive} />;
+    main = <OutputView vt={vtRef.current} changes={outputChanges} title={outputTitle} ctx={ctx} width={W} height={mainH} active={viewActive} />;
   } else {
     main = <FailuresView run={run} data={data} pick={pick} ctx={ctx} width={W} height={mainH} active={viewActive} />;
   }

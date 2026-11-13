@@ -203,6 +203,48 @@ test("the Output view draws the runners' own output through the virtual terminal
   app.unmount();
 });
 
+test('the Output view follows a run as it writes, and looks back through it meanwhile', async () => {
+  const app = start();
+  await failuresShown(app);
+  await until(shows(app, '5 failed'), 'the first run');
+  // A run that writes a line, then waits before it writes the next: each shows while it is still going.
+  const { provider } = app;
+  const runSuite = provider.runSuite.bind(provider);
+  let go;
+  let done;
+  provider.runSuite = async (suite, o) => {
+    if (suite.runner === 'vitest') {
+      // More than the view holds, so there is something to look back at.
+      for (let i = 0; i < 40; i++) o.onData(`line ${i}\r\n`);
+      o.onData('first chunk\r\n');
+      await new Promise((r) => (go = r));
+      o.onData('second chunk\r\n');
+      await new Promise((r) => (done = r));
+    }
+    return runSuite(suite, o);
+  };
+  const plain = () => stripAnsi(app.lastFrame());
+  app.stdin.write('4');
+  await until(() => plain().includes('G the end  y copy'), 'the Output view');
+  app.stdin.write(KEYS.ctrlR);
+  try {
+    await until(() => plain().includes('first chunk'), 'the first chunk');
+    assert.doesNotMatch(plain(), /second chunk/);
+    // Looking back and to the end again still works while it grows.
+    app.stdin.write('k');
+    await until(() => plain().includes('1 lines up') && plain().includes('line 21'), 'looking back');
+    app.stdin.write('j');
+    await until(() => !plain().includes('lines up') && !plain().includes('line 21'), 'the end');
+    go();
+    await until(() => plain().includes('second chunk'), 'the second chunk');
+    assert.match(plain(), /first chunk/);
+  } finally {
+    go?.();
+    done?.();
+  }
+  app.unmount();
+});
+
 test('/run with part of a name runs the tests matching it; /runners says how each suite runs', async () => {
   const app = start();
   await failuresShown(app);
