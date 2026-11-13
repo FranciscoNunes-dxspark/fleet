@@ -520,9 +520,15 @@ export function App({ config: initialConfig, provider = createLookout(), cwd: st
     setTitle?.(title);
   }, [title]);
 
-  // What's drawn, worked out again when something came in (version) or the filter changed.
+  // What's drawn, worked out again when something came in (version) or the filter changed. The rows
+  // shown are a copy as of this draw: the ref's array grows as the proxy reports, and a view holding it
+  // would see a new length on each render of its own (the Requests view's following re-rendered it for
+  // every exchange, between App's draws).
   const list = exchangesRef.current;
-  const shown = useMemo(() => filtered(list, filter), [version, filter, list]);
+  const [shown, shownOf] = useMemo(() => {
+    const rows = filtered(list, filter);
+    return [rows === list ? list.slice() : rows, list.length];
+  }, [version, filter, list]);
   const hostList = useMemo(() => hostsOf(list), [version, list]);
   const findings = useMemo(() => trafficFindings(list), [version, list]);
   const open = list.reduce((n, ex) => n + (ex.kind === 'http' && ex.state === 'open' ? 1 : 0), 0);
@@ -750,7 +756,7 @@ export function App({ config: initialConfig, provider = createLookout(), cwd: st
   } else if (view === 'setup') {
     main = <SetupView listening={listening} config={config} ctx={ctx} width={W} height={mainH} active={viewActive} />;
   } else {
-    main = <RequestsView list={shown} total={list.length} filter={filter} listening={listening} paused={paused} ctx={ctx} width={W} height={mainH} active={viewActive} onCursor={(ex) => {
+    main = <RequestsView list={shown} total={shownOf} filter={filter} listening={listening} paused={paused} ctx={ctx} width={W} height={mainH} active={viewActive} onCursor={(ex) => {
           selectedRef.current = ex;
         }} />;
   }

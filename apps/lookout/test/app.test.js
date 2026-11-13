@@ -52,6 +52,41 @@ test('it listens on opening and lists what passes, a refused handshake and a tun
   app.unmount();
 });
 
+/** A request as the proxy reports it, open until `finish` is called on it. */
+function streamed(n) {
+  const at = Date.now();
+  return {
+    kind: 'http', state: 'open', at, scheme: 'https', method: 'GET', host: 'api.shop.test', port: 443, path: `/stream/${n}`, url: `https://api.shop.test/stream/${n}`, intercepted: true, note: null, error: null,
+    request: { httpVersion: '1.1', headers: [['Host', 'api.shop.test']], body: null, size: 0, truncated: false },
+    response: null,
+    timings: { start: at },
+  };
+}
+
+test('requests streaming in reach the list, the counts and the cursor on the last row; a cursor above it stays', async () => {
+  const app = start();
+  await until(shows(app, 'pinned.bank.test'), 'the session');
+  const cursorLine = () => app.lastFrame().split('\n').find((l) => l.includes('❯')) ?? '';
+  const burst = Array.from({ length: 30 }, (_, i) => streamed(i));
+  for (const ex of burst) app.provider.emit(ex);
+  // Finished after it came in: the same object reported again.
+  Object.assign(burst[29], { state: 'done', response: { status: 201, statusText: 'Created', httpVersion: '1.1', headers: [], body: null, size: 0, truncated: false } });
+  app.provider.emit(burst[29]);
+  await until(() => /\/stream\/29/.test(cursorLine()) && /201/.test(cursorLine()), 'the cursor following to the last request, finished');
+  assert.match(app.lastFrame(), /41 captured/);
+  assert.match(app.lastFrame(), /1 Requests 41/);
+  app.stdin.write('k');
+  await until(() => /\/stream\/28/.test(cursorLine()), 'the cursor up a row');
+  app.provider.emit(streamed(30));
+  await until(shows(app, '42 captured'), 'the new count');
+  assert.match(cursorLine(), /\/stream\/28/);
+  app.stdin.write('j');
+  await until(() => /\/stream\/29/.test(cursorLine()), 'the cursor down a row');
+  app.stdin.write('j');
+  await until(() => /\/stream\/30/.test(cursorLine()), 'the new row, at the end');
+  app.unmount();
+});
+
 test('↵ shows a request with its credentials hidden; s shows them, and they are hidden again next time', async () => {
   const app = start();
   await until(shows(app, 'pinned.bank.test'), 'the session');
