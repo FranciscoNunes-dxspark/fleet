@@ -409,6 +409,7 @@ body.prod .strip {
   display: flex;
   align-items: center;
   gap: 2ch;
+  /* app.js fitTerm makes it taller by the pixels a whole number of terminal rows leaves over (STRIP_HEIGHT). */
   height: 26px;
   padding: 0 0 0 12px;
   background: var(--bar);

@@ -71,13 +71,28 @@ term.loadAddon(fit);
 
 /**
  * Sizes the terminal to its box: the apps draw every row of it. The box is rarely a whole number of
- * rows high, and the pixels left over stay at the bottom, above the strip, rather than above the first
- * row, where they read as an empty line at the top of the window.
+ * rows high, and the pixels left over would show as an empty band, a row's height at most, above the
+ * strip (or above the first row, where they were once). The strip takes them instead, a little taller,
+ * so the apps' last row sits on it. `stripExtra` is what it took, given back to the room before it's
+ * measured again, so the strip's own change of size comes to the same rows and stops there.
  */
+const STRIP_HEIGHT = 26;
+let stripExtra = 0;
 function fitTerm() {
   const size = fit.proposeDimensions();
   if (!size || !size.cols || !size.rows) return;
-  if (term.cols !== size.cols || term.rows !== size.rows) term.resize(size.cols, size.rows);
+  // xterm's own cell height: the screen's drawn size can still be the one before a resize.
+  const rowHeight = term._core?._renderService?.dimensions?.css?.cell?.height;
+  const box = document.getElementById('terminal');
+  const style = getComputedStyle(box);
+  const room = box.clientHeight - (parseFloat(style.paddingTop) || 0) - (parseFloat(style.paddingBottom) || 0) + stripExtra;
+  const rows = rowHeight ? Math.max(1, Math.floor(room / rowHeight)) : size.rows;
+  if (term.cols !== size.cols || term.rows !== rows) term.resize(size.cols, rows);
+  if (!rowHeight) return;
+  const extra = Math.max(0, Math.floor(room - rows * rowHeight));
+  if (extra === stripExtra) return;
+  stripExtra = extra;
+  document.getElementById('strip').style.height = `${STRIP_HEIGHT + extra}px`;
 }
 term.open(document.getElementById('terminal'));
 // The GPU renderer, several times faster than drawing with the page's own elements; where the web view
