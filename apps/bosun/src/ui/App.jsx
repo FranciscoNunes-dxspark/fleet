@@ -291,14 +291,23 @@ export function App({ config: initialConfig, dir = process.cwd(), load = loadCre
   const envProfile = useRef(null);
   const [, setTick] = useState(0);
   const redrawSoon = useRef(null);
+  // New lines in a log on screen redraw only the log pane (CrewView's LogPane hears them here), not
+  // the whole screen: nothing else drawn reads a process's lines.
+  const logChanges = useRef(new Set()).current;
+  const wholeSoon = useRef(false);
   const changed = (linesOf) => {
     // New lines in a log that isn't on screen (CrewView says which is, in `logShown`) change nothing drawn.
     const shown = ctxRef.current?.logShown;
     if (linesOf && shown !== true && shown !== linesOf.name) return;
+    if (!linesOf) wholeSoon.current = true;
     if (redrawSoon.current) return;
     redrawSoon.current = setTimeout(() => {
       redrawSoon.current = null;
-      if (supRef.current) publish();
+      const whole = wholeSoon.current;
+      wholeSoon.current = false;
+      if (!supRef.current) return;
+      if (whole) publish();
+      else for (const grew of logChanges) grew();
     }, 80);
   };
   const publish = () => {
@@ -1186,7 +1195,7 @@ export function App({ config: initialConfig, dir = process.cwd(), load = loadCre
       </Panel>
     );
   } else {
-    main = <CrewView procs={data.procs} ctx={ctx} width={W} height={mainH} active={viewActive} />;
+    main = <CrewView procs={data.procs} ctx={ctx} width={W} height={mainH} active={viewActive} changes={logChanges} />;
   }
 
   const keys = focus === 'prompt'

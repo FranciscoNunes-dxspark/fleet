@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { memo, useEffect, useRef, useState } from 'react';
 import { useInput } from 'ink';
 import * as a from '../actions.js';
 import { isTrouble } from '../crew.js';
@@ -48,6 +48,59 @@ function rowsFor(list, end, height, width, segmentsOf, find, markStyle) {
   }
   return out.reverse().slice(-height);
 }
+
+/** The indexes of the lines `query` matches. */
+const hitsIn = (lines, query) => {
+  const find = matcher(query);
+  return find ? lines.flatMap((l, i) => (find(shownText(l)).length ? [i] : [])) : [];
+};
+
+/** A log row, drawn again only when what it shows changed (its text, colours or width): scrolled up, or when the whole screen draws again. */
+const segsKey = (segments) => segments.map((s) => `${s.text}\u0000${s.color ?? ''}\u0000${s.bg ?? ''}\u0000${s.bold ? 1 : ''}`).join('\u0001');
+const LogRow = memo(
+  function LogRow({ segments, width }) {
+    return <Row pointer={false} width={width} segments={segments} />;
+  },
+  (a, b) => a.width === b.width && a.sig === b.sig,
+);
+
+/**
+ * The log pane: the lines of the process under the cursor (or, `merged`, all of them). New lines render
+ * it again alone: App calls each of `changes` when a log on screen grew, rather than drawing the whole
+ * screen, so the list, the top line and the status line stay as they were. `listRef` gets the lines it
+ * shows, for CrewView's search to scroll through.
+ */
+const LogPane = memo(function LogPane({ changes, procs, sel, merged, troubleOnly, filter, search, back, listRef, nameW, width, height }) {
+  const [, setTick] = useState(0);
+  useEffect(() => {
+    if (!changes) return;
+    const grew = () => setTick((n) => n + 1);
+    changes.add(grew);
+    return () => changes.delete(grew);
+  }, [changes]);
+  const innerH = height - 2;
+  // The pane's lines: the one's or all of them, only the troubled ones with `e`.
+  const all = merged ? mergedLines(procs, KEEP_LINES) : (sel?.lines ?? []);
+  const list = troubleOnly || filter.terms.length ? all.filter((l) => (!troubleOnly || troubled(l)) && passes(filter, l)) : all;
+  listRef.current = list;
+  const lineW = width - 3;
+  const end = Math.max(0, list.length - back);
+  const tagW = merged ? nameW + 1 : 0;
+  const title = merged ? 'All' : logTitle(sel, width >= 60 ? 10 : 0);
+  const find = matcher(search.query);
+  const hits = find ? hitsIn(list, search.query) : [];
+  const here = hits[Math.min(search.at, hits.length - 1)];
+  const where = search.query || search.typing ? `find ${search.query}${search.typing ? '▏' : ''} ${hits.length ? `${Math.min(search.at, hits.length - 1) + 1}/${hits.length}` : 'no match'}` : '';
+  const hint = [where, filter.terms.length ? `filter ${filter.text}` : '', troubleOnly ? 'trouble only · e all' : '', back ? `${back} up · wheel down follows` : '', !merged && !troubleOnly && sel?.trouble ? 'trouble' : ''].filter(Boolean).join(' · ');
+  return (
+    <Panel title={title} hint={hint} width={width} height={height}>
+      {rowsFor(list, end, innerH, lineW - tagW, (l) => lineSegments(l), find, (n) => (n === here ? theme.matchHere : theme.match)).map((r, i) => {
+        const segments = [{ text: ' ' }, ...(merged ? [{ text: r.first ? fit(list[r.at].name, nameW) + ' ' : ' '.repeat(tagW), color: theme.accent }] : []), ...r.segments];
+        return <LogRow key={i} width={width - 2} segments={segments} sig={segsKey(segments)} />;
+      })}
+    </Panel>
+  );
+});
 
 /** How long it has been up, or how long ago it ended: 42s, 5m, 2h. */
 export function uptime(ms, now = Date.now()) {
@@ -198,7 +251,7 @@ export function withRoom(segments, extras, width) {
 }
 
 /** The crew: each process with its state, port and uptime, and beside it the log of the one under the cursor (or all of them). */
-export function CrewView({ procs, ctx, width, height, active }) {
+export function CrewView({ procs, ctx, width, height, active, changes }) {
   const innerH = height - 2;
   const listW = Math.min(width >= 150 ? 56 : 44, Math.max(30, Math.floor(width * 0.32)));
   const logW = width - listW;
@@ -241,15 +294,8 @@ export function CrewView({ procs, ctx, width, height, active }) {
 
   // Whose log is on screen (true: all of them), so App redraws for new lines there and nowhere else.
   ctx.logShown = merged ? true : (sel?.name ?? null);
-  // The pane's lines: the one's or all of them, only the troubled ones with `e`.
-  const all = merged ? mergedLines(shown, KEEP_LINES) : (sel?.lines ?? []);
-  const list = troubleOnly || filter.terms.length ? all.filter((l) => (!troubleOnly || troubled(l)) && passes(filter, l)) : all;
-  const listRef = useRef(list);
-  listRef.current = list;
-  const hitsIn = (lines, query) => {
-    const find = matcher(query);
-    return find ? lines.flatMap((l, i) => (find(shownText(l)).length ? [i] : [])) : [];
-  };
+  // The lines the log pane shows (LogPane keeps it current), for the search to scroll through.
+  const listRef = useRef([]);
 
   /** Scrolls to match `n` (round from either end), a third of the way down the pane. */
   const goTo = (n, query = searchRef.current.query) => {
@@ -360,16 +406,6 @@ export function CrewView({ procs, ctx, width, height, active }) {
 
   const colour = STATUS_COLOUR();
   const now = Date.now();
-  const lineW = logW - 3;
-  const end = Math.max(0, list.length - back);
-  const tagW = merged ? nameW + 1 : 0;
-  const paneTitle = merged ? 'All' : logTitle(sel, logW >= 60 ? 10 : 0);
-  const find = matcher(search.query);
-  const hits = find ? hitsIn(list, search.query) : [];
-  const here = hits[Math.min(search.at, hits.length - 1)];
-  const where = search.query || search.typing ? `find ${search.query}${search.typing ? '▏' : ''} ${hits.length ? `${Math.min(search.at, hits.length - 1) + 1}/${hits.length}` : 'no match'}` : '';
-  const logHint = [where, filter.terms.length ? `filter ${filter.text}` : '', troubleOnly ? 'trouble only · e all' : '', back ? `${back} up · wheel down follows` : '', !merged && !troubleOnly && sel?.trouble ? 'trouble' : ''].filter(Boolean).join(' · ');
-
   return (
     <>
       <Panel title={group ? `Crew · ${group}` : 'Crew'} hint={`${shown.filter((p) => p.child).length}/${shown.length}`} width={listW} height={height} focused={active}>
@@ -408,20 +444,7 @@ export function CrewView({ procs, ctx, width, height, active }) {
           ),
         )}
       </Panel>
-      <Panel title={paneTitle} hint={logHint} width={logW} height={height}>
-        {rowsFor(list, end, innerH, lineW - tagW, (l) => lineSegments(l), find, (n) => (n === here ? theme.matchHere : theme.match)).map((r, i) => (
-          <Row
-            key={i}
-            pointer={false}
-            width={logW - 2}
-            segments={[
-              { text: ' ' },
-              ...(merged ? [{ text: r.first ? fit(list[r.at].name, nameW) + ' ' : ' '.repeat(tagW), color: theme.accent }] : []),
-              ...r.segments,
-            ]}
-          />
-        ))}
-      </Panel>
+      <LogPane changes={changes} procs={shown} sel={sel} merged={merged} troubleOnly={troubleOnly} filter={filter} search={search} back={back} listRef={listRef} nameW={nameW} width={logW} height={height} />
     </>
   );
 }
