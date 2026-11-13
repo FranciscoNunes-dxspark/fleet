@@ -1,51 +1,60 @@
-// What makes Keel behave like an app on a phone rather than a web page: the back gesture (or
-// Android's back button) closes the panel or menu that's open instead of leaving the page, and
-// pulling down at the top of a page refreshes it.
+// What makes Keel behave like an app rather than a web page: going back (the browser's button,
+// Android's back button or gesture) closes the pane that's open instead of leaving the page, and
+// on a phone pulling down at the top of a page refreshes it.
 import { useEffect, useRef, useState } from 'react';
 
 const touchScreen = () => typeof window !== 'undefined' && !!window.matchMedia?.('(pointer: coarse)').matches;
 
-// A step taken out after a layer closed waits a moment, so a layer opening straight after (the
-// search choosing a pull request opens its panel) takes the step over instead of being closed
-// by it.
-let stepOut = null;
+// The panes open over the page, oldest first. Each has a step in the browser's history with
+// its depth on it (`keelDepth`), so going back lands on the pane under it, or on the page.
+const layers = [];
+let settling = null;
+const depthNow = () => window.history.state?.keelDepth || 0;
+
+// After panes close some other way (✕, Escape, a tap outside), their steps come back out, all
+// at once and a moment later, so a pane opening straight after (search choosing a pull request
+// opens its panel) takes a step over instead of having it taken away under it.
+function settle() {
+  settling = null;
+  const extra = depthNow() - layers.length;
+  if (extra > 0) window.history.go(-extra);
+}
+
+if (typeof window !== 'undefined') {
+  window.addEventListener('popstate', () => {
+    // Back (or forward) to a depth: every pane above it closes, the newest first.
+    const depth = depthNow();
+    while (layers.length > depth) layers.pop().close();
+  });
+}
 
 /**
- * While `open`, a step in the browser's history that going back takes away, closing it with
- * `onClose`. Touch screens only: on a computer the back button keeps meaning the page before.
+ * While `open`, a pane over the page: going back (the browser's button, Android's back
+ * gesture) closes it with `onClose` rather than leaving the page under it.
  */
 export function useBackCloses(open, onClose) {
   const closeRef = useRef(onClose);
   closeRef.current = onClose;
   useEffect(() => {
-    if (!open || !touchScreen()) return undefined;
+    if (!open || typeof window === 'undefined') return undefined;
+    const layer = { close: () => closeRef.current() };
+    const depth = layers.length + 1;
     // The same URL and the router's own state, so React Router sees nothing change either way.
-    const mark = Math.random().toString(36).slice(2);
-    const state = { ...window.history.state, keelLayer: mark };
-    if (stepOut) {
-      clearTimeout(stepOut);
-      stepOut = null;
+    const state = { ...window.history.state, keelDepth: depth };
+    if (settling && depthNow() >= depth) {
+      clearTimeout(settling);
+      settling = null;
       window.history.replaceState(state, '');
     } else {
       window.history.pushState(state, '');
     }
-    let popped = false;
-    // Back from a layer opened over this one lands on this one's step: it stays open.
-    const onPop = () => {
-      if (window.history.state?.keelLayer === mark) return;
-      popped = true;
-      closeRef.current();
-    };
-    window.addEventListener('popstate', onPop);
+    layers.push(layer);
     return () => {
-      window.removeEventListener('popstate', onPop);
-      // Closed some other way (the ✕, a tap outside): take the step back out, unless a link in
-      // the panel has already moved on to another page.
-      if (popped || window.history.state?.keelLayer !== mark) return;
-      stepOut = setTimeout(() => {
-        stepOut = null;
-        if (window.history.state?.keelLayer === mark) window.history.back();
-      }, 0);
+      const at = layers.indexOf(layer);
+      if (at < 0) return; // closed by going back: its step has gone already
+      layers.splice(at, 1);
+      // Its step comes out, unless a link in the pane has moved on to another page.
+      if (depthNow() > layers.length && !settling) settling = setTimeout(settle, 0);
     };
   }, [open]);
 }

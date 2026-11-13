@@ -6,6 +6,7 @@ import { t } from './i18n.js';
 import { ErrorBox, Loading } from './ui.jsx';
 import { Icon } from './icons.jsx';
 import { splitRows } from './diffrows.js';
+import { useBackCloses } from './touch.js';
 
 // Side by side or one column: each viewer's own choice, kept in this browser. Side by side by
 // default where there is room for two columns of code.
@@ -103,6 +104,8 @@ export function DiffViewer({ files, initialPath, diffPath, fileHref, webUrl, tit
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   });
+  // Going back closes the changes, back to the pull request under them.
+  useBackCloses(true, onClose);
   // Each file's folder once, then its name, as a list reads in a code review.
   const rail = useMemo(() => files.map((f) => {
     const parts = f.path.replace(/^\//, '').split('/');
