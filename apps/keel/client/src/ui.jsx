@@ -11,6 +11,7 @@ import { useSticky } from './sticky.js';
 import { Icon } from './icons.jsx';
 import { stageName, stageOfPath } from './line/names.js';
 import { MARK } from './mark.js';
+import { useBackCloses } from './touch.js';
 
 const CHEVRON = `M${MARK.chevron.points.map(([x, y]) => `${x} ${y}`).join(' L')} Z`;
 
@@ -287,6 +288,8 @@ export function Drawer({ open, onClose, children, label, docked = false }) {
       root.classList.remove(cls, 'drawer-wide-open');
     };
   }, [open, docked, wide]);
+  // On a phone, going back closes the panel rather than the page under it.
+  useBackCloses(open && !docked, onClose);
   if (!open) return null;
   // The panel's own buttons, pinned to its top corner while its contents scroll under them.
   const tools = (

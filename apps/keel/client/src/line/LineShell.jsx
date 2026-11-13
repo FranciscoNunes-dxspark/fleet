@@ -10,6 +10,7 @@ import { api } from '../api.js';
 import { useApi, useApp } from '../context.js';
 import { Avatar, Logo, Tip, statusLine, useMedia } from '../ui.jsx';
 import { useSticky } from '../sticky.js';
+import { PULL_READY, useBackCloses, usePullToRefresh } from '../touch.js';
 import { isHomeable, saveHome } from '../home.js';
 import { Icon } from '../icons.jsx';
 import { logoMood } from '../mark.js';
@@ -107,6 +108,9 @@ export default function LineShell({ children }) {
   // next?) and the Control room (what's happening right now?). The line of stations is the Line's
   // own navigation, so the other two leave it out and take the whole window.
   const view = pathname === '/desk' || pathname.startsWith('/desk/') ? 'desk' : pathname === '/control' ? 'control' : 'line';
+  // Pull down at the top of a page to refresh it, as in any app (the Desk's panes scroll on their own).
+  const hardRefresh = useHardRefresh(setSpinning);
+  const pull = usePullToRefresh(() => { if (!spinning) hardRefresh(); }, phone && view !== 'desk');
   const needs = [
     s?.approvals && { label: t(s.approvals === 1 ? '1 approval' : '{n} approvals', { n: s.approvals }), stage: 'deploying', tone: 'warn', mine: true },
     s?.myReviews && { label: t(s.myReviews === 1 ? '1 review' : '{n} reviews', { n: s.myReviews }), stage: 'review', tone: 'accent', mine: true },
@@ -158,6 +162,11 @@ export default function LineShell({ children }) {
             </div>
           </header>
 
+          {phone && (pull > 0 || spinning) && (
+            <div className={`ptr${pull >= PULL_READY ? ' ptr-ready' : ''}${pull ? '' : ' ptr-settled'}`} style={{ '--pull': `${pull || PULL_READY}px` }} aria-hidden="true">
+              <span className={spinning ? 'spin' : ''} style={spinning ? undefined : { transform: `rotate(${pull * 5}deg)` }}><Icon name="refresh" size={18} /></span>
+            </div>
+          )}
           {newVersion && (
             <div className="update-banner" role="status">
               <span>{t('A new version of Keel is available.')}</span>
@@ -418,10 +427,20 @@ function Dock({ section, sectionTo, summary: s, mood, attention, spinning, setSp
 function Tabs({ section, sectionTo, summary: s, more, setMore, spinning, setSpinning }) {
   const { live } = useApp();
   const { pathname } = useLocation();
+  const navigate = useNavigate();
   const ref = useRef(null);
   const hardRefresh = useHardRefresh(setSpinning);
   const counts = sectionCounts(s);
   useEffect(() => setMore(false), [pathname, setMore]);
+  useBackCloses(more, () => setMore(false));
+  // Tapping the tab you're on, as in a phone's own apps: back to the top of the page, and from
+  // the top to the section's first page.
+  const again = (e, sec) => {
+    if (section?.id !== sec.id) return;
+    e.preventDefault();
+    if (window.scrollY > 0) window.scrollTo({ top: 0, behavior: 'smooth' });
+    else if (pathname !== sec.to) navigate(sec.to);
+  };
   useEffect(() => {
     if (!more) return undefined;
     const close = (e) => { if (!ref.current?.contains(e.target)) setMore(false); };
@@ -452,7 +471,7 @@ function Tabs({ section, sectionTo, summary: s, more, setMore, spinning, setSpin
         {SECTIONS.map((sec) => {
           const c = counts[sec.id];
           return (
-            <NavLink key={sec.id} to={sectionTo(sec)} className={() => `tab${section?.id === sec.id ? ' on' : ''}`}>
+            <NavLink key={sec.id} to={sectionTo(sec)} onClick={(e) => again(e, sec)} className={() => `tab${section?.id === sec.id ? ' on' : ''}`}>
               <span className="dock-icon"><Icon name={sec.icon} size={21} />{c?.n > 0 && <span className={`dock-n dock-n-${c.tone}`}>{c.n}</span>}</span>
               <span className="tab-text">{sec.label()}</span>
             </NavLink>

@@ -6,6 +6,8 @@
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
+  "launch_handler": { "client_mode": ["navigate-existing", "auto"] },
+  "categories": ["developer", "productivity"],
   "background_color": "#121314",
   "theme_color": "#121314",
   "icons": [
