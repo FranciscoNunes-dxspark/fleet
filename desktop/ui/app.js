@@ -955,5 +955,17 @@ showMaximised();
 win.setFocus().catch(() => {}).finally(focusTerm);
 win.onFocusChanged(({ payload: focused }) => focused && focusTerm());
 
+// The window's own bars (the title bar, its buttons and tabs, the strip and its tools) leave the
+// keyboard where it was when clicked: a button would keep the page's focus, and a click on an empty
+// part would take it to the page, both away from the terminal while the window stays in front, so
+// maximising or clicking a tab left the keys going nowhere. Clicks still do what they do.
+for (const bar of [document.querySelector('.top'), $('strip')]) {
+  bar.addEventListener('mousedown', (e) => {
+    if (!e.target.closest('input, textarea, select')) e.preventDefault();
+  });
+}
+// A new size (maximised, restored, snapped by the system) comes back to the terminal too.
+win.onResized(() => focusTerm());
+
 begin();
 setTimeout(lookForUpdate, 10_000);
