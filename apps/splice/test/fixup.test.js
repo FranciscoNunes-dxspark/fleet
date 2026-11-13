@@ -108,7 +108,8 @@ test('F picks an older commit, commits the fixup and folds it in, keeping other 
     // The fix landed in Alpha itself, and nothing else changed there.
     assert.equal(g('show', 'HEAD~2:Alpha.txt'), 'Alpha, fixed');
     assert.equal(g('show', '--name-only', '--format=', 'HEAD~2'), 'Alpha.txt');
-    assert.equal(g('status', '--porcelain'), 'M Gamma.txt');
+    // The other changes come back from the stash once the rebase is over, a moment after the history shows it.
+    await until(() => g('status', '--porcelain') === 'M Gamma.txt', 'the other changes back', 30000);
     assert.equal(readFileSync(join(dir, 'Gamma.txt'), 'utf8'), 'Gamma\nwork in progress\n');
     await until(() => !frame().includes('REBASING'), 'no rebase left in progress', 30000);
     await until(() => frame().includes('main is rewritten. /range-diff shows'), 'the hint about /range-diff');
