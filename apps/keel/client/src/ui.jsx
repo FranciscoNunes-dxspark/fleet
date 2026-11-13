@@ -11,6 +11,7 @@ import { useSticky } from './sticky.js';
 import { Icon } from './icons.jsx';
 import { stageName, stageOfPath } from './line/names.js';
 import { MARK } from './mark.js';
+import { useBackCloses } from './touch.js';
 
 const CHEVRON = `M${MARK.chevron.points.map(([x, y]) => `${x} ${y}`).join(' L')} Z`;
 
@@ -287,6 +288,8 @@ export function Drawer({ open, onClose, children, label, docked = false }) {
       root.classList.remove(cls, 'drawer-wide-open');
     };
   }, [open, docked, wide]);
+  // Going back closes the panel rather than the page under it.
+  useBackCloses(open && !docked, onClose);
   if (!open) return null;
   // The panel's own buttons, pinned to its top corner while its contents scroll under them.
   const tools = (
@@ -578,8 +581,10 @@ export function pinInView(el, ms = 6000) {
  * to the button, so the surrounding layout (often a table) never reflows.
  */
 export function Confirm({ text, onConfirm, children, className = 'btn btn-small' }) {
+  const [open, setOpen] = useState(false);
+  useBackCloses(open, () => setOpen(false));
   return (
-    <AlertDialog.Root>
+    <AlertDialog.Root open={open} onOpenChange={setOpen}>
       <AlertDialog.Trigger><Button type="button" {...buttonLook(className)}>{children}</Button></AlertDialog.Trigger>
       <AlertDialog.Content size="1" maxWidth="340px" className="confirm-pop" aria-describedby={undefined}>
         <AlertDialog.Title size="3" mb="0">{text}</AlertDialog.Title>

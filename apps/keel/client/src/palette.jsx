@@ -7,6 +7,7 @@ import { useApp } from './context.js';
 import { Icon } from './icons.jsx';
 import { parseQuery, rank } from './search.js';
 import { t } from './i18n.js';
+import { useBackCloses } from './touch.js';
 
 // Lists the palette searches, fetched when it opens and kept a minute (the server caches them too).
 const SOURCES = ['/prs', '/workitems', '/pipelines', '/repos'];
@@ -162,6 +163,7 @@ export function CommandPalette() {
     }
     return () => back.current?.focus?.();
   }, [open]);
+  useBackCloses(open, () => setOpen(false));
 
   const actions = useMemo(() => [
     ...(can('workitems.write') ? [{ key: 'action:newwi', kind: 'action', title: t('New work item'), keywords: ['create', 'bug', 'story', 'task'], target: { type: 'newworkitem' }, boost: 1 }] : []),

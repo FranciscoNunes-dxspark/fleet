@@ -90,9 +90,39 @@
   }
   .tab:hover { text-decoration: none; }
   .tab.on { color: var(--accent-ink); }
+  .tab .dock-icon { transition: transform var(--dur-fast) ease-out; }
+  .tab:active .dock-icon { transform: scale(0.86); }
   .tab-text { font-size: var(--text-xs); font-weight: 500; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .tabbar-more { position: fixed; right: 8px; left: auto; bottom: calc(var(--bottom-h) + 8px); top: auto; z-index: 21; width: min(320px, calc(100vw - 16px)); }
 }
+
+/* ------------------------------------------------------------------ phones: an app, not a page
+   Touch gives no hover, so a tap shows itself by pressing in; the frame (top bar, tabs, the line)
+   isn't text to select or long-press; the page doesn't bounce past its ends, so pulling down at
+   the top is Keel's own refresh (touch.js); and landscape keeps clear of the notch. */
+@media (max-width: 900px) and (pointer: coarse) {
+  html { -webkit-tap-highlight-color: transparent; overscroll-behavior-y: none; }
+  .line-top, .tabbar, .sec-tabs, .line-rail-compact, .line-menu-pop, .line-fab {
+    -webkit-user-select: none; user-select: none; -webkit-touch-callout: none;
+  }
+  .ls-phone .ls-body { padding-left: env(safe-area-inset-left, 0px); padding-right: env(safe-area-inset-right, 0px); }
+  .tabbar { padding-left: max(4px, env(safe-area-inset-left, 0px)); padding-right: max(4px, env(safe-area-inset-right, 0px)); }
+  .line-menu-pages a, .line-menu-row { transition: background var(--dur-fast); }
+  .lc:active { transform: scale(0.985); }
+  .list-card-hit:active { background: var(--surface-2); }
+  .line-menu-pages a:active, .line-menu-row:active { background: var(--surface-3); }
+  .drawer { padding-bottom: env(safe-area-inset-bottom, 0px); }
+}
+
+/* Pull to refresh: a round button that follows the finger down from under the top bar, and
+   turns the accent once letting go will refresh. */
+.ptr {
+  position: fixed; top: var(--chrome-h); left: 50%; z-index: 9; display: grid; place-items: center; width: 36px; height: 36px;
+  margin-left: -18px; border-radius: 50%; background: var(--surface); color: var(--muted); border: 1px solid var(--line);
+  box-shadow: var(--shadow-pop); transform: translateY(calc(var(--pull) - 28px)); pointer-events: none;
+}
+.ptr-settled { transition: transform var(--dur-slow) ease-out; }
+.ptr-ready { color: var(--accent-ink); border-color: var(--accent); }
 
 /* The phone's tab bar keeps the icon with its count on the corner. */
 .dock-icon { position: relative; display: inline-grid; place-items: center; }
