@@ -157,17 +157,52 @@ export async function comment(ctx, pr = ctx.current().pr, text = '') {
   }, { label: 'Commenting' });
 }
 
+/**
+ * /run's words: the branch, and the stages to leave out, each after a minus (`/run main -Deploy`),
+ * matched to the pipeline's stages by their YAML or display name, any case, spaces and dashes ignored.
+ */
+export function runArgs(text = '', stages = []) {
+  const key = (s) => String(s).toLowerCase().replace(/[^a-z0-9]/g, '');
+  const skip = [];
+  const unknown = [];
+  let on = '';
+  for (const w of text.trim().split(/\s+/).filter(Boolean)) {
+    // Git refuses branch names that start with a dash, so a dash always means a stage.
+    if (!w.startsWith('-')) {
+      on ||= w;
+      continue;
+    }
+    const s = stages.find((x) => key(x.id) === key(w.slice(1)) || key(x.name) === key(w.slice(1)));
+    if (s) {
+      if (!skip.includes(s.id)) skip.push(s.id);
+    } else unknown.push(w.slice(1));
+  }
+  return { branch: on, skip, unknown };
+}
+
 export async function runPipeline(ctx, row = ctx.current().pipeline, text = '') {
   if (!row) return ctx.note('Pick a pipeline first.', 'error');
-  const on = text.trim() || branch(row.branch) || '';
+  const stages = ctx.service?.pipelineStages ? await ctx.service.pipelineStages(row.projectId, row.definition.id).catch(() => []) : [];
+  const { branch: picked, skip, unknown } = runArgs(text, stages);
+  if (unknown.length) {
+    const names = stages.map((s) => s.name).join(', ');
+    return ctx.note(`${row.definition.name} has no stage ${unknown.map((u) => `"${u}"`).join(' or ')}. ${names ? `Its stages: ${names}.` : 'It has no stages to leave out.'}`, 'error');
+  }
+  if (stages.length && skip.length >= stages.length) return ctx.note('Pick at least one stage to run.', 'error');
+  const on = picked || branch(row.branch) || '';
+  const running = stages.filter((s) => !skip.includes(s.id)).map((s) => s.name);
+  const skipping = stages.filter((s) => skip.includes(s.id)).map((s) => s.name);
   const ok = await ask(ctx, deploys(row, ctx.data.production?.monitors) || [], {
-    title: `Run ${row.definition.name}${on ? ` on ${on}` : ''}?`,
+    title: `Run ${row.definition.name}${on ? ` on ${on}` : ''}${skipping.length ? `, skipping ${skipping.join(', ')}` : ''}?`,
+    detail: stages.length
+      ? `Stages: ${running.join(', ')}.${skipping.length ? '' : ` Leave one out with /run ${on || '<branch>'} -<stage>.`}`
+      : undefined,
     options: [{ label: 'Yes, run it', value: true }, { label: 'No', value: false }],
   });
   if (!ok) return;
   await ctx.task(`Run ${row.definition.name}${on ? ` on ${on}` : ''}`, async () => {
-    const run = await ctx.service.queueBuild(row.projectId, row.definition.id, on || undefined);
-    did(ctx, `Ran ${row.definition.name}${on ? ` on ${on}` : ''}${run?.id ? ` (run ${run.id})` : ''}`, 'pipeline');
+    const run = await ctx.service.queueBuild(row.projectId, row.definition.id, on || undefined, skip.length ? { skipStages: skip } : undefined);
+    did(ctx, `Ran ${row.definition.name}${on ? ` on ${on}` : ''}${skipping.length ? ` without ${skipping.join(', ')}` : ''}${run?.id ? ` (run ${run.id})` : ''}`, 'pipeline');
     await ctx.reload();
     return [`${run?.id ? `Queued run ${run.id}` : 'Queued'}. It shows under Latest runs once Azure DevOps starts it.`];
   }, { label: 'Queuing' });

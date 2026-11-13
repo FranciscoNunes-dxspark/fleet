@@ -837,6 +837,9 @@ button.tree-caret:hover { background: var(--surface-2); color: var(--ink); }
 .complete-form .field { display: grid; gap: 4px; margin-bottom: 10px; font-size: var(--text-md); color: var(--ink-2); }
 .complete-form .field .input { width: 100%; }
 .complete-form > .check { display: flex; margin-bottom: 6px; }
+.complete-form .run-stages { border: 0; padding: 0; margin: 0 0 10px; }
+.complete-form .run-stages legend { padding: 0; margin-bottom: 4px; }
+.complete-form .run-stages .check { display: flex; align-items: center; gap: 6px; color: var(--ink); }
 .complete-actions { display: flex; gap: 8px; margin-top: 12px; }
 
 /* ------------------------------------------------------ releases + approvals */

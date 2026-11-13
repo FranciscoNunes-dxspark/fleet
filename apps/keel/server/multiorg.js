@@ -357,6 +357,7 @@ export function createMultiService(entries) {
     },
     pipelineRuns: viaProject('pipelineRuns'),
     runDetails: viaProject('runDetails'),
+    pipelineStages: viaProject('pipelineStages'),
     queueBuild: viaProject('queueBuild'),
     cancelBuild: viaProject('cancelBuild'),
     async releases() {

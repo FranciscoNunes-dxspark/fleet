@@ -86,7 +86,7 @@ export const HELP = [
     about: 'failing first, then unstable, healthy and idle',
     views: ['pipelines'],
     rows: [
-      ['n', 'Run it on its branch (/run <branch> for another)'],
+      ['n', 'Run it on its branch (/run <branch> for another, /run <branch> -<stage> to leave a stage out)'],
       ['c', 'Cancel the run that\'s queued or running (asks first)'],
       ['l', 'The run in full: stages, jobs and steps, each failed step\'s errors and the end of its log, tests, the commits it built (/logs <number> for an older run)'],
       ['↵', 'Latest runs, full height'],
