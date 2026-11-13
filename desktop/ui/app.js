@@ -73,22 +73,15 @@ term.loadAddon(fit);
  * Sizes the terminal to its box with one row more than shows, the last one clipped (#terminal hides
  * it). The apps draw a row short of their screen (Ink would clear the whole screen every frame
  * otherwise) and end each frame on the row below; in a terminal Fleet's bar sat on that row, here it
- * would be an empty one. With the hidden row, what the apps draw fills everything that shows.
+ * would be an empty one. With the hidden row, what the apps draw fills everything that shows. The box
+ * is rarely a whole number of rows high: the pixels left over stay at the bottom, showing a sliver of
+ * that empty row above the strip, rather than going above the first row, where they read as an empty
+ * line at the top of the window.
  */
 function fitTerm() {
   const size = fit.proposeDimensions();
   if (!size || !size.cols || !size.rows) return;
   if (term.cols !== size.cols || term.rows !== size.rows + 1) term.resize(size.cols, size.rows + 1);
-  // The box is rarely a whole number of rows high: the pixels left over would show most of the hidden
-  // row. They go above the terminal instead, so the rows that show end at the box's bottom edge.
-  // xterm's own cell height: the screen's drawn size can still be the one before this resize.
-  const rowHeight = term._core?._renderService?.dimensions?.css?.cell?.height;
-  if (!rowHeight) return;
-  const box = document.getElementById('terminal');
-  const style = getComputedStyle(box);
-  const room = box.clientHeight - (parseFloat(style.paddingTop) || 0) - (parseFloat(style.paddingBottom) || 0);
-  const spare = room - size.rows * rowHeight;
-  term.element.style.marginTop = `${Math.max(0, Math.min(Math.floor(spare), Math.floor(rowHeight) - 1))}px`;
 }
 term.open(document.getElementById('terminal'));
 // The GPU renderer, several times faster than drawing with the page's own elements; where the web view

@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { memo, useEffect, useMemo, useRef, useState } from 'react';
 import { Box, Text, useApp, useInput } from 'ink';
 import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -61,6 +61,22 @@ function headerContext({ path, dirty, shell, running }) {
   return segs;
 }
 
+// The console's rows are drawn by a component of their own, which PowerShell's output renders again alone: the script,
+// the panes and the lines around them stay as they were, however fast it prints. A row is memoised by its text, so a
+// key's echo draws one row again rather than every row of the console.
+const ConsoleLine = memo(function ConsoleLine({ line }) {
+  return <Text wrap="truncate">{line}</Text>;
+});
+const ConsoleLines = memo(function ConsoleLines({ term, changes, height, back, cursor }) {
+  const [, setTick] = useState(0);
+  useEffect(() => {
+    const changed = () => setTick((n) => n + 1);
+    changes.add(changed);
+    return () => changes.delete(changed);
+  }, [changes]);
+  return screenLines(term.vt, { height, back, cursor }).map((line, i) => <ConsoleLine key={i} line={line} />);
+});
+
 /** A path as a PowerShell string: single quotes, each one in it doubled (PowerShell takes the curly ones as quotes too). */
 export const psQuote = (s) => `'${String(s).replace(/['‘’‚‛]/g, (q) => q + q)}'`;
 
@@ -97,6 +113,8 @@ export function App({ shell, file, cwd = process.cwd(), setTitle, mouse, family 
   // PowerShell, with its terminal (terminal.js), and how it ended when it has.
   const termRef = useRef(null);
   const [, setTick] = useState(0);
+  // Who hears that PowerShell's screen changed: the console's rows (ConsoleLines), not the whole app.
+  const consoleChanges = useRef(new Set()).current;
   const [ended, setEnded] = useState(null);
   const [back, setBack] = useState(0);
   const [note, setNote] = useState(null);
@@ -206,7 +224,9 @@ export function App({ shell, file, cwd = process.cwd(), setTitle, mouse, family 
     const mine = shell.open({
       ...size.current,
       cwd,
-      onChange: () => setTick((n) => n + 1),
+      onChange: () => {
+        if (termRef.current === mine) for (const changed of consoleChanges) changed();
+      },
       onPrompt: (ok) => termRef.current === mine && finishRun(ok),
       onExit: (info) => {
         if (termRef.current !== mine) return;
@@ -521,30 +541,31 @@ export function App({ shell, file, cwd = process.cwd(), setTitle, mouse, family 
     mouse?.enable(true);
   }, [mouse]);
 
-  // The bracket at the cursor and its partner are marked.
-  const partner = focus === 'script' && !pathMode && !buf.anchor ? buffer.matchBracket(buf) : null;
-  const pairMarks = partner ? [partner, ...[buf.col, buf.col - 1].filter((c) => '()[]{}'.includes(buf.lines[buf.row][c] ?? ' ')).slice(0, 1).map((col) => ({ row: buf.row, col }))] : [];
-  const scriptLines = [];
-  for (let i = top; i < Math.min(buf.lines.length, top + scriptRows); i++) {
-    let segs = highlight(buf.lines[i]);
-    const sel = buffer.selectedColumns(buf, i);
-    if (sel) segs = withSelection(segs, sel[0], sel[1]);
-    for (const m of pairMarks) if (m.row === i) segs = withSelection(segs, m.col, m.col + 1, { bold: true, color: theme.accent, underline: true });
-    if (i === buf.row && focus === 'script' && !pathMode && !buf.anchor) segs = withCursor(segs, buf.col);
-    scriptLines.push(
-      <Row key={i} pointer={false} width={inner} segments={[{ text: String(i + 1).padStart(GUTTER - 1) + ' ', color: i === buf.row ? theme.accent : theme.dim }, ...fitSegments(fromColumn(segs, left), codeW)]} />,
-    );
-  }
+  // The script's rows, highlighted again only when what they show changed (not for each chunk PowerShell prints).
+  const scriptCursor = focus === 'script' && !pathMode;
+  const scriptLines = useMemo(() => {
+    // The bracket at the cursor and its partner are marked.
+    const partner = scriptCursor && !buf.anchor ? buffer.matchBracket(buf) : null;
+    const pairMarks = partner ? [partner, ...[buf.col, buf.col - 1].filter((c) => '()[]{}'.includes(buf.lines[buf.row][c] ?? ' ')).slice(0, 1).map((col) => ({ row: buf.row, col }))] : [];
+    const lines = [];
+    for (let i = top; i < Math.min(buf.lines.length, top + scriptRows); i++) {
+      let segs = highlight(buf.lines[i]);
+      const sel = buffer.selectedColumns(buf, i);
+      if (sel) segs = withSelection(segs, sel[0], sel[1]);
+      for (const m of pairMarks) if (m.row === i) segs = withSelection(segs, m.col, m.col + 1, { bold: true, color: theme.accent, underline: true });
+      if (i === buf.row && scriptCursor && !buf.anchor) segs = withCursor(segs, buf.col);
+      lines.push(
+        <Row key={i} pointer={false} width={inner} segments={[{ text: String(i + 1).padStart(GUTTER - 1) + ' ', color: i === buf.row ? theme.accent : theme.dim }, ...fitSegments(fromColumn(segs, left), codeW)]} />,
+      );
+    }
+    return lines;
+  }, [buf, top, left, scriptRows, scriptCursor, inner, codeW]);
 
   // The console: PowerShell's scrollback and screen, its cursor showing while it has the keys.
   const term = termRef.current;
   const typing = focus === 'console' && !pathMode && !help;
   const consoleEls = term
-    ? screenLines(term.vt, { height: consoleRows, back, cursor: typing && term.alive }).map((line, i) => (
-        <Text key={i} wrap="truncate">
-          {line}
-        </Text>
-      ))
+    ? <ConsoleLines term={term} changes={consoleChanges} height={consoleRows} back={back} cursor={typing && term.alive} />
     : [<Row key="none" pointer={false} width={inner} segments={[{ text: '  No PowerShell found: install pwsh (PowerShell 7) to run scripts.', color: theme.dim }]} />];
   const consoleHint = back ? `${back} lines up` : ended ? `ended${ended.code ? ` (exit ${ended.code})` : ''}${ended.error ? `: ${ended.error.message}` : ''} · ↵ in the Console starts it again` : undefined;
 
