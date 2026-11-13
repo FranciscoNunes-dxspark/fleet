@@ -114,7 +114,7 @@ const app = render(
     onConfig={(c) => (settings = c)}
   />,
   // Through the mouse's stdout, which watches the frames to select text from.
-  { exitOnCtrlC: false, stdin, stdout: mouse?.stdout ?? stdout },
+  { exitOnCtrlC: false, incrementalRendering: true, stdin, stdout: mouse?.stdout ?? stdout },
 );
 
 // However it ends, a value still waiting to be cleared goes from the clipboard first.

@@ -1,3 +1,125 @@
+diff --git a/node_modules/ink/build/ink.js b/node_modules/ink/build/ink.js
+index 30019a0..c58cdf9 100644
+--- a/node_modules/ink/build/ink.js
++++ b/node_modules/ink/build/ink.js
+@@ -168,6 +168,7 @@ export default class Ink {
+         this.lastOutputToRender = '';
+         this.lastOutputHeight = 0;
+         this.lastTerminalWidth = this.getTerminalWidth();
++        this.lastTerminalRows = options.stdout.rows;
+         // This variable is used only in debug mode to store full static output
+         // so that it's rerendered every time, not just new static parts, like in non-debug mode
+         this.fullStaticOutput = '';
+@@ -203,7 +204,12 @@ export default class Ink {
+     };
+     resized = () => {
+         const currentWidth = this.getTerminalWidth();
+-        if (currentWidth < this.lastTerminalWidth) {
++        // Patched (patches/ink+6.8.0.patch): incremental, any new size draws the frame whole, as the lines kept are
++        // where the old size had them (a terminal moves its rows when it gets shorter, and may rewrap them).
++        const currentRows = this.options.stdout.rows;
++        const sizeChanged = currentWidth !== this.lastTerminalWidth || currentRows !== this.lastTerminalRows;
++        this.lastTerminalRows = currentRows;
++        if (currentWidth < this.lastTerminalWidth || (this.options.incrementalRendering && sizeChanged)) {
+             // We clear the screen when decreasing terminal width to prevent duplicate overlapping re-renders.
+             this.log.clear();
+             this.lastOutput = '';
+@@ -319,7 +325,10 @@ export default class Ink {
+         // Only apply when writing to a real TTY — piped output always gets trailing newlines.
+         const isFullscreen = this.options.stdout.isTTY && outputHeight >= this.options.stdout.rows;
+         const outputToRender = isFullscreen ? output : output + '\n';
+-        if (this.lastOutputHeight >= this.options.stdout.rows) {
++        // Patched (patches/ink+6.8.0.patch): a frame exactly as tall as the screen leaves no newline below it, so nothing
++        // scrolled off and it can be erased and drawn again in place, as a shorter one is. Only a taller one, whose top
++        // went past the screen, needs the terminal cleared, which a full-screen app would otherwise see on every frame.
++        if (this.lastOutputHeight > this.options.stdout.rows) {
+             const sync = shouldSynchronize(this.options.stdout);
+             if (sync) {
+                 this.options.stdout.write(bsu);
+diff --git a/node_modules/ink/build/log-update.js b/node_modules/ink/build/log-update.js
+index 73e297d..b749f06 100644
+--- a/node_modules/ink/build/log-update.js
++++ b/node_modules/ink/build/log-update.js
+@@ -4,6 +4,12 @@ import { cursorPositionChanged, buildCursorSuffix, buildCursorOnlySequence, buil
+ // Count visible lines in a string, ignoring the trailing empty element
+ // that `split('\n')` produces when the string ends with '\n'.
+ const visibleLineCount = (lines, str) => str.endsWith('\n') ? lines.length - 1 : lines.length;
++// Patched (patches/ink+6.8.0.patch): the whole frame, once it is on the screen, for whoever draws over it or keeps it
++// (the family's kit: a selection painted over the frame, hosted mode's repaint). Incremental frames write only the
++// lines that changed, so their writes can't be read back as the frame.
++const announce = (stream, str) => {
++    stream.emit?.('ink-frame', str);
++};
+ const createStandard = (stream, { showCursor = false } = {}) => {
+     let previousLineCount = 0;
+     let previousOutput = '';
+@@ -50,6 +56,7 @@ const createStandard = (stream, { showCursor = false } = {}) => {
+                 str +
+                 cursorSuffix);
+             previousLineCount = lines.length;
++            announce(stream, str);
+         }
+         previousCursorPosition = activeCursor ? { ...activeCursor } : undefined;
+         cursorWasShown = activeCursor !== undefined;
+@@ -79,6 +86,7 @@ const createStandard = (stream, { showCursor = false } = {}) => {
+         const lines = str.split('\n');
+         previousOutput = str;
+         previousLineCount = lines.length;
++        announce(stream, str);
+         if (!activeCursor && cursorWasShown) {
+             stream.write(hideCursorEscape);
+         }
+@@ -148,6 +156,7 @@ const createIncremental = (stream, { showCursor = false } = {}) => {
+             previousCursorPosition = activeCursor ? { ...activeCursor } : undefined;
+             previousOutput = str;
+             previousLines = nextLines;
++            announce(stream, str);
+             return true;
+         }
+         const hasTrailingNewline = str.endsWith('\n');
+@@ -160,8 +169,11 @@ const createIncremental = (stream, { showCursor = false } = {}) => {
+             const extraSlot = previousHadTrailingNewline ? 1 : 0;
+             buffer.push(ansiEscapes.eraseLines(previousVisible - visibleCount + extraSlot), ansiEscapes.cursorUp(visibleCount));
+         }
+-        else {
+-            buffer.push(ansiEscapes.cursorUp(previousVisible - 1));
++        else if (previousLines.length > 1) {
++            // Patched: up to the first line from where the last frame left the cursor, which is the row below it when
++            // it ended with a newline (Ink went up one row too few, so each frame landed a row lower than the last);
++            // and no ESC [0A, which a terminal takes as one row up.
++            buffer.push(ansiEscapes.cursorUp(previousLines.length - 1));
+         }
+         for (let i = 0; i < visibleCount; i++) {
+             const isLastLine = i === visibleCount - 1;
+@@ -174,9 +186,11 @@ const createIncremental = (stream, { showCursor = false } = {}) => {
+                 }
+                 continue;
+             }
++            // Patched: the line erased before it is written rather than after, as ESC [K after a line as wide as the
++            // terminal erases its last character on a real terminal (the cursor waits on that column to wrap).
+             buffer.push(ansiEscapes.cursorTo(0) +
++                ansiEscapes.eraseLine +
+                 nextLines[i] +
+-                ansiEscapes.eraseEndLine +
+                 // Don't append newline after the last line when the input
+                 // has no trailing newline (fullscreen mode).
+                 (isLastLine && !hasTrailingNewline ? '' : '\n'));
+@@ -188,6 +202,7 @@ const createIncremental = (stream, { showCursor = false } = {}) => {
+         previousCursorPosition = activeCursor ? { ...activeCursor } : undefined;
+         previousOutput = str;
+         previousLines = nextLines;
++        announce(stream, str);
+         return true;
+     };
+     render.clear = () => {
+@@ -214,6 +229,7 @@ const createIncremental = (stream, { showCursor = false } = {}) => {
+         const lines = str.split('\n');
+         previousOutput = str;
+         previousLines = lines;
++        announce(stream, str);
+         if (!activeCursor && cursorWasShown) {
+             stream.write(hideCursorEscape);
+         }
 diff --git a/node_modules/ink/build/measure-text.js b/node_modules/ink/build/measure-text.js
 index 6934dc5..32bc825 100644
 --- a/node_modules/ink/build/measure-text.js

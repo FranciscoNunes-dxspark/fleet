@@ -1068,9 +1068,10 @@ export function App({ initialPath, reopenLast = false, config: initialConfig, ch
     [mouse],
   );
 
-  // Layout: everything is sized to the terminal, one row short of it so Ink never clears the screen.
+  // Layout: everything is sized to the terminal, every row of it (patches/ink+6.8.0.patch draws a frame that tall
+  // again in place, rather than clearing the screen first).
   const W = columns;
-  const H = Math.max(12, rows - 1);
+  const H = Math.max(12, rows);
   const act = activityRows(entries);
   const bottom = confirmReq ? confirmHeight(confirmReq) : commandRows(suggestions.length);
   const mood = moodFor({ data, busy, lastEntry: entries.at(-1) });

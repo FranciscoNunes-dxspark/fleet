@@ -108,7 +108,7 @@ async function runApp() {
       familyHome={familyDir()}
     />,
     // Through the mouse's stdout, which watches the frames to select text from.
-    { exitOnCtrlC: false, stdin, stdout: mouse?.stdout ?? stdout },
+    { exitOnCtrlC: false, incrementalRendering: true, stdin, stdout: mouse?.stdout ?? stdout },
   );
   await app.waitUntilExit();
   process.exit(0);

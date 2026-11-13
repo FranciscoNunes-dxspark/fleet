@@ -28,12 +28,13 @@ export function RequestsView({ list, total, filter, listening, paused, ctx, widt
     onCursor?.(sel ?? null);
   });
 
-  // Following: on the last row (or an empty list), new rows take the cursor with them.
+  // Following: on the last row (or an empty list), new rows take the cursor with them. Done as this
+  // renders, not in an effect after it, so new rows cost one frame rather than a second one moving the cursor.
   const seen = useRef(list.length);
-  useEffect(() => {
+  if (list.length !== seen.current) {
     if (list.length > seen.current && (seen.current === 0 || nav.current() >= seen.current - 1)) nav.setIndex(list.length - 1);
     seen.current = list.length;
-  }, [list.length]);
+  }
 
   const keys = (input, key) => {
     if (!ctx.viewHasKeys()) return;

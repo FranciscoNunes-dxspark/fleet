@@ -114,6 +114,26 @@ test('new lines redraw only when their log is on screen, and a log shown again i
   }
 });
 
+test('new lines redraw the log pane alone: its search count follows them, and the list still shows a stop', async () => {
+  const dir = project({ procs: { ticker: 'node ticker.js', quiet: `node -e "setInterval(() => {}, 1e6)"` } }, { 'ticker.js': TICKER });
+  const app = start({ dir });
+  const frame = () => app.lastFrame() ?? '';
+  const found = () => Number(/find tick \d+\/(\d+)/.exec(frame())?.[1] ?? 0);
+  try {
+    await until(() => /tick 3/.test(frame()), 'the ticker\'s log');
+    app.stdin.write('\x06');
+    await type(app.stdin, 'tick');
+    app.stdin.write(KEYS.enter);
+    await until(() => found() >= 3, 'its matches');
+    const now = found();
+    await until(() => found() >= now + 3, 'the count growing with new lines');
+    app.stdin.write('s');
+    await until(() => /ticker\s+stopped/.test(frame()) && frame().includes('── stopped'), 'the stop in the list and the log');
+  } finally {
+    app.unmount();
+  }
+});
+
 test('/free asks, then stops what holds the port; /init writes bosun.json from package.json', async () => {
   const dir = project({});
   const { rmSync } = await import('node:fs');

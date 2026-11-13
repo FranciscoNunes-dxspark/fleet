@@ -180,8 +180,9 @@ test('the wheel scrolls a list or the grid and leaves the cursor where it was; s
 
     // The grid, in a terminal too small for all of Players' rows and columns.
     // Two rows fewer than the old frame needed: a pane spends one row on its title, not two, and the
-    // command box sits over the view rather than taking a row of its own.
-    resize(app, 40, 20);
+    // command box sits over the view rather than taking a row of its own. One fewer again: the frame
+    // takes every row of the terminal now, its last one too.
+    resize(app, 40, 19);
     p = at('Explorer');
     mouse.click(p.x, p.y);
     await until(() => /❯ +T Clubs/.test(frame()), 'the explorer again');

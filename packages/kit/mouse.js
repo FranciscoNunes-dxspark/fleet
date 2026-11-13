@@ -182,14 +182,22 @@ export function mouseSession(stdin, stdout, { copy = (text) => copyToClipboard(t
     clear();
   });
 
-  // Ink draws through this; after each frame, the selection is painted again over it.
+  // Ink draws through this; after each frame, the selection is painted again over it. The patched Ink
+  // (patches/ink+6.8.0.patch) says each frame whole once it's drawn (`ink-frame`), as its incremental
+  // writes are only the lines that changed; until it has, a write that is a whole frame is read as one.
+  let framed = false;
+  const drawn = (lines) => {
+    frame = lines;
+    if (sel) stdout.write(SAVE + paint() + RESTORE);
+  };
+  stdout.on?.('ink-frame', (text) => {
+    framed = true;
+    drawn(text.replace(/\n$/, '').split('\n'));
+  });
   const write = (data, ...rest) => {
     const result = stdout.write(data, ...rest);
-    const lines = frameLines(data);
-    if (lines) {
-      frame = lines;
-      if (sel) stdout.write(SAVE + paint() + RESTORE);
-    }
+    const lines = framed ? null : frameLines(data);
+    if (lines) drawn(lines);
     return result;
   };
   const inkStdout = new Proxy(stdout, {

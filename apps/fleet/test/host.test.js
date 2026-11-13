@@ -78,6 +78,12 @@ test('switching starts an app the first time, sends it the keys, repaints it on 
   await until(() => !alive(one) && !alive(two), 'both apps gone');
 });
 
+test('a desktop window from before the apps drew every row hides its last one: the apps get a row less', async () => {
+  const { term } = startHost({ spaces: SPACES, columns: 70, rows: 14, desktop: true, hiddenRow: true });
+  await until(() => term.screen.row(0) === 'one 70x13', 'the first app a row short', { term });
+  assert.ok(!term.screen.text().includes('ctrl+b ? help'), 'no bar drawn in the grid');
+});
+
 test('in the desktop window the apps get every row, and the bar goes to the window as its state', async () => {
   const { term, keys } = startHost({ spaces: SPACES, columns: 70, rows: 14, desktop: true });
   const { screen } = term;

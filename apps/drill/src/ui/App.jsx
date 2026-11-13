@@ -130,11 +130,12 @@ export function App({ config: initialConfig, provider = createDrill(), cwd: star
   // The function that stops watching the folder, while w watches it.
   const [watching, setWatchingState] = useState(null);
   const watchingRef = useRef(null);
-  // The runners' output, as a terminal draws it (the kit's vt.js), for the Output view; `outputTick` redraws it.
+  // The runners' output, as a terminal draws it (the kit's vt.js), for the Output view. Who hears that it changed is
+  // the Output view's rows (OutputView's `changes`), not the whole app, so a run's output draws only those again.
   const vtRef = useRef(null);
   if (!vtRef.current) vtRef.current = new VirtualTerminal(Math.max(20, columns - 2), 200, { scrollback: SCROLLBACK });
   const [outputTitle, setOutputTitle] = useState(null);
-  const [, setOutputTick] = useState(0);
+  const outputChanges = useRef(new Set()).current;
   const outputTimer = useRef(null);
   // The failure the Failures view opens on, when the Tree picks one.
   const [pick, setPick] = useState(null);
@@ -394,13 +395,14 @@ export function App({ config: initialConfig, provider = createDrill(), cwd: star
         vt.history = [];
         vt.resize(Math.max(20, columnsRef.current - 2), 200);
         setOutputTitle(title);
+        for (const changed of outputChanges) changed();
       },
       write: (text) => {
         vtRef.current.write(text);
         if (outputTimer.current || !alive.current) return;
         outputTimer.current = setTimeout(() => {
           outputTimer.current = null;
-          if (alive.current) setOutputTick((n) => n + 1);
+          if (alive.current) for (const changed of outputChanges) changed();
         }, 100);
       },
     },
@@ -712,9 +714,10 @@ export function App({ config: initialConfig, provider = createDrill(), cwd: star
   // Drags that start where the component on screen selects for itself skip the screen selection (none here yet).
   useEffect(() => mouse?.claimDrags?.(() => false), [mouse]);
 
-  // Layout: everything is sized to the terminal, one row short of it so Ink never clears the screen.
+  // Layout: everything is sized to the terminal, every row of it (patches/ink+6.8.0.patch draws a frame that tall
+  // again in place, rather than clearing the screen first).
   const W = columns;
-  const H = Math.max(12, rows - 1);
+  const H = Math.max(12, rows);
   // esc hides the activity lines; the Log view keeps them all.
   const act = activityRows(entries.filter((e) => e.shown !== false));
   const bottom = confirmReq ? confirmHeight(confirmReq) : commandRows(suggestions.length);
@@ -751,7 +754,7 @@ export function App({ config: initialConfig, provider = createDrill(), cwd: star
   } else if (view === 'flaky') {
     main = <FlakyView flaky={flaky} run={run} ctx={ctx} width={W} height={mainH} active={viewActive} />;
   } else if (view === 'output') {
-    main = <OutputView vt={vtRef.current} title={outputTitle} ctx={ctx} width={W} height={mainH} active={viewActive} />;
+    main = <OutputView vt={vtRef.current} changes={outputChanges} title={outputTitle} ctx={ctx} width={W} height={mainH} active={viewActive} />;
   } else {
     main = <FailuresView run={run} data={data} pick={pick} ctx={ctx} width={W} height={mainH} active={viewActive} />;
   }

@@ -228,3 +228,28 @@ test("a host's repaint takes a selection painted before it away, and leaves the 
   sgr(0, 2, 1, 'm');
   assert.deepEqual([heard[0].button, heard[0].x, heard[0].y], ['left', 2, 1]);
 });
+
+test('with Ink saying its frames, a selection is taken from the frame it says, not from its incremental writes', () => {
+  const queue = [];
+  const stdin = { read: () => (queue.length ? queue.shift() : null) };
+  const written = [];
+  const handlers = {};
+  const stdout = { write: (d) => (written.push(d), true), on: (name, fn) => (handlers[name] = fn), columns: 40, rows: 10 };
+  const copied = [];
+  const mouse = mouseSession(stdin, stdout, { copy: (t) => copied.push(t) });
+  mouse.enable(true);
+  const sgr = (code, x, y, end = 'M') => {
+    queue.push(`\x1b[<${code};${x + 1};${y + 1}${end}`);
+    drain(stdin);
+  };
+  mouse.stdout.write('\x1b[2K\x1b[Gheader\nsome text here\nmore');
+  handlers['ink-frame']('header\nsome text here\nmore');
+  // An incremental frame: only the second line, which mustn't be read as the whole frame.
+  mouse.stdout.write('\x1b[1A\x1b[1G\x1b[2Kother words here\n\x1b[E');
+  handlers['ink-frame']('header\nother words here\nmore');
+  sgr(0, 6, 1);
+  sgr(32, 10, 1);
+  assert.match(written.at(-1), /\x1b\[2;7H\x1b\[7mwords\x1b\[27m/);
+  sgr(0, 10, 1, 'm');
+  assert.deepEqual(copied, ['words']);
+});

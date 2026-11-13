@@ -118,7 +118,7 @@ const runInTerminal =
 const app = render(
   <App config={config} provider={demo ? demoDocker() : createDocker()} kube={demo ? demoKube() : createKube()} openUrl={openUrl} checkUpdate={checkUpdate} installUpdate={updates ? installUpdate : undefined} setTitle={setTitle} mouse={mouse} copy={copy} runInTerminal={runInTerminal} {...(demo ? { spawnShell: demoShell() } : {})} />,
   // Through the mouse's stdout, which watches the frames to select text from.
-  { exitOnCtrlC: false, stdin, stdout: mouse?.stdout ?? stdout },
+  { exitOnCtrlC: false, incrementalRendering: true, stdin, stdout: mouse?.stdout ?? stdout },
 );
 await app.waitUntilExit();
 process.exit(0);

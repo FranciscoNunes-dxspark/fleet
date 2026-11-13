@@ -82,10 +82,11 @@ export function sizeOf(value) {
 }
 
 // What the app has on screen, kept from what it writes, to draw it again when it comes back on screen:
-// Ink only draws what changed, and nothing has from its side. Ink's log-update writes each frame whole
-// (what to erase of the last one, then every line), and a full-screen app's frames start at the top
-// left corner, so a frame starts the screen again; so does clearing it (or the alternate screen, as the
-// app starts). Anything else (text an app writes before Ink starts, as Keel's first-run questions,
+// Ink only draws what changed, and nothing has from its side. A full-screen app's frames start at the
+// top left corner, so a frame starts the screen again: the whole frame Ink says it drew (`ink-frame`,
+// patches/ink+6.8.0.patch), as its incremental writes are only the lines that changed; or, before Ink
+// has said one, a write of log-update's that erases the last frame and draws the next whole. So does
+// clearing the screen (or the alternate screen, as the app starts). Anything else (text an app writes before Ink starts, as Keel's first-run questions,
 // colours, a drag's selection) adds to it; titles, notifications and the bell are left out, so a
 // repaint never says them again.
 const LEAD = /^(?:\x1b\[[0-9;?]*[A-LN-Za-ln-z])+/;
@@ -94,12 +95,15 @@ const SAID = /\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)|\x07/g;
 const MAX_SCREEN = 4 * 1024 * 1024;
 
 /**
- * A keeper of what's on the app's screen: write(data) with each write, `screen` what draws it again
- * from nothing (from the top left corner), `starts` how many times the screen started again.
+ * A keeper of what's on the app's screen: write(data) with each write, frame(text) with each frame Ink
+ * drew (after its writes), `screen` what draws it again from nothing (from the top left corner),
+ * `starts` how many times the screen started again.
  */
 export function screenKeeper() {
   let screen = '';
   let starts = 0;
+  // Ink says its frames: its writes are no longer read as them.
+  let framed = false;
   const restart = (text) => {
     screen = `\x1b[H${text.replace(SAID, '')}`;
     starts++;
@@ -113,9 +117,13 @@ export function screenKeeper() {
       const lead = LEAD.exec(s)?.[0] ?? '';
       if (clear >= 0) restart(s.slice(clear));
       // A frame of log-update's: it erased the last one's lines (from the top), and draws from there.
-      else if (lead.includes('\x1b[2K')) restart(s.slice(lead.length));
+      else if (!framed && lead.includes('\x1b[2K')) restart(s.slice(lead.length));
       else if (screen.length + s.length > MAX_SCREEN) restart(s);
       else screen += s.replace(SAID, '');
+    },
+    frame(text) {
+      framed = true;
+      restart(text);
     },
     get screen() {
       return screen;
@@ -196,6 +204,7 @@ export function hostedStreams({ stdin, stdout, control = controlPipe(), env = pr
     kept.write(data);
     return write.call(this, data, ...rest);
   });
+  stdout.on('ink-frame', (text) => kept.frame(text));
   // The host's repaint: everything on the app's screen, drawn again in one synchronized update.
   const repaint = () => {
     // Whoever paints over the screen itself (the mouse's selection) starts again from this frame.

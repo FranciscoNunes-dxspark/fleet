@@ -94,7 +94,7 @@ const copy = (text) => copyToClipboard(text);
 const app = render(
   <App config={config} dir={dir} profile={value('--profile') ?? null} autostart={!args.includes('--no-start')} openUrl={openUrl} checkUpdate={checkUpdate} installUpdate={updates ? installUpdate : undefined} setTitle={setTitle} mouse={mouse} copy={copy} notify={(title, body) => process.stdout.write(notification(title, body))} />,
   // Through the mouse's stdout, which watches the frames to select text from.
-  { exitOnCtrlC: false, stdin, stdout: mouse?.stdout ?? stdout },
+  { exitOnCtrlC: false, incrementalRendering: true, stdin, stdout: mouse?.stdout ?? stdout },
 );
 await app.waitUntilExit();
 process.exit(0);
