@@ -5,10 +5,15 @@ import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
 import { pathToFileURL } from 'node:url';
 
-// Colours on, before chalk (under Ink) looks.
+import { EventEmitter } from 'node:events';
+import { VirtualTerminal } from '../vt.js';
+
+// Colours on, before chalk (under Ink) looks; and not in CI, where Ink draws nothing (is-in-ci).
 process.env.FORCE_COLOR = '3';
+delete process.env.CI;
+delete process.env.CONTINUOUS_INTEGRATION;
 const React = (await import('react')).default;
-const { Box, renderToString, Text } = await import('ink');
+const { Box, render, renderToString, Text } = await import('ink');
 
 const inkFile = (name) => new URL(name, import.meta.resolve('ink'));
 const { lineWidth, widestLine } = await import(inkFile('./text-width.js'));
@@ -53,5 +58,30 @@ test('the patched Ink keeps drawing past its caches’ limits', () => {
   for (let i = 0; i < 12000; i += 1) {
     const out = renderToString(h(Box, { width: 12 }, h(Text, { wrap: 'truncate', color: 'red' }, `row ${i} of many`)), { columns: 20 });
     if (i % 1000 === 0 || i > 11990) assert.equal(out.replace(/\x1b\[\d+m/g, ''), `row ${i} of many`.slice(0, 11) + '…');
+  }
+});
+
+test('the patched Ink draws a frame as tall as the screen again in place, never clearing the terminal', async () => {
+  const h = React.createElement;
+  const vt = new VirtualTerminal(24, 4);
+  const written = [];
+  const stdout = Object.assign(new EventEmitter(), { columns: 24, rows: 4, isTTY: true, write: (s) => (written.push(s), vt.write(s), true) });
+  const stdin = Object.assign(new EventEmitter(), { isTTY: true, setRawMode() {}, setEncoding() {}, resume() {}, pause() {}, ref() {}, unref() {}, read: () => null });
+  const frame = (n) => h(Box, { flexDirection: 'column', width: 24, height: 4 }, ...[0, 1, 2, 3].map((i) => h(Text, { key: i }, `row ${i} of frame ${n}`)));
+  const app = render(frame(1), { stdout, stdin, patchConsole: false, exitOnCtrlC: false, maxFps: 0 });
+  try {
+    for (let n = 2; n <= 4; n++) {
+      written.length = 0;
+      app.rerender(frame(n));
+      await new Promise((r) => setTimeout(r, 20));
+      const out = written.join('');
+      assert.ok(out.includes(`row 3 of frame ${n}`), 'the frame was drawn');
+      // Unpatched, every frame after the first starts with clearing the whole terminal (ESC [2J).
+      assert.ok(!out.includes('\x1b[2J'), `frame ${n} cleared the terminal`);
+      assert.ok(!out.endsWith('\n'), `frame ${n} ends with a newline`);
+      assert.deepEqual([0, 1, 2, 3].map((y) => vt.rowText(y)), [0, 1, 2, 3].map((i) => `row ${i} of frame ${n}`));
+    }
+  } finally {
+    app.unmount();
   }
 });

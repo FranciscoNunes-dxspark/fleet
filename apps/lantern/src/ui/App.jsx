@@ -639,7 +639,7 @@ export function App({ config: initialConfig, provider = createLantern(), cwd: st
   useEffect(() => mouse?.claimDrags?.(() => false), [mouse]);
 
   const W = columns;
-  const H = Math.max(12, rows - 1);
+  const H = Math.max(12, rows);
   const act = activityRows(entries.filter((e) => e.shown !== false));
   const bottom = confirmReq ? confirmHeight(confirmReq) : commandRows(suggestions.length);
   const mood = moodFor({ result, busy, lastEntry: entries.at(-1) });

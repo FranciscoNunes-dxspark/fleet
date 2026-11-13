@@ -170,6 +170,9 @@ async fn start(app: AppHandle, pty: State<'_, Pty>, cols: u16, rows: u16, output
     cmd.env("TERM", "xterm-256color");
     cmd.env("COLORTERM", "truecolor");
     cmd.env("FLEET_DESKTOP", "1");
+    // This window's terminal is exactly what shows. Windows before this kept a hidden row below it, and
+    // a Fleet started without this gives the apps a row less.
+    cmd.env("FLEET_DESKTOP_ROWS", "all");
     if let Some(dir) = start_folder() {
         cmd.cwd(dir);
     }

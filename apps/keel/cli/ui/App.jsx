@@ -944,9 +944,10 @@ export function App({ keel, home = 'line', openUrl = openInBrowser, openSonar = 
   mouseRef.current = onMouse;
   useEffect(() => mouse?.subscribe((e) => mouseRef.current(e)), [mouse]);
 
-  // Layout: everything is sized to the terminal, one row short of it so Ink never clears the screen.
+  // Layout: everything is sized to the terminal, every row of it (patches/ink+6.8.0.patch draws a frame that tall
+  // again in place, rather than clearing the screen first).
   const W = columns;
-  const H = Math.max(12, rows - 1);
+  const H = Math.max(12, rows);
   const act = [...(reaction ? [[{ text: `${FACES.idle} `, color: theme.accent }, { text: reactionLine(reaction), color: theme.dim }]] : []), ...activityRows(entries)];
   const bottom = confirmReq ? confirmHeight(confirmReq) : 3 + suggestions.length;
   const mood = moodFor({ attention: data.attention, busy, lastEntry: entries.at(-1), pollError });

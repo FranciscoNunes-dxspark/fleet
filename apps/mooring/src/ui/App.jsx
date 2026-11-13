@@ -1034,9 +1034,10 @@ export function App({ config: initialConfig, cwd = process.cwd(), local, makeSes
   useEffect(() => mouse?.subscribe((e) => mouseRef.current(e)), [mouse]);
   useEffect(() => mouse?.claimDrags?.(() => false), [mouse]);
 
-  // Layout: everything is sized to the terminal, one row short of it so Ink never clears the screen.
+  // Layout: everything is sized to the terminal, every row of it (patches/ink+6.8.0.patch draws a frame that tall
+  // again in place, rather than clearing the screen first).
   const W = columns;
-  const H = Math.max(12, rows - 1);
+  const H = Math.max(12, rows);
   const act = activityRows(entries.filter((e) => e.shown !== false));
   const bottom = confirmReq ? confirmHeight(confirmReq) : commandRows(suggestions.length);
   const trouble = troubles({ transfers, conn, health });

@@ -87,9 +87,9 @@ export const psQuote = (s) => `'${String(s).replace(/['‘’‚‛]/g, (q) => q
 export function App({ shell, file, cwd = process.cwd(), setTitle, mouse, family = true, moodEvery = 30_000, scratch = join(tmpdir(), `helm-${process.pid}`) }) {
   const { exit } = useApp();
   const { columns, rows: screenRows } = useTerminalSize();
-  // A row short of the screen: Ink clears the whole terminal before every frame as tall as it, which flashes on each
-  // key and each line PowerShell writes (the other apps draw a row short too).
-  const rows = Math.max(10, screenRows - 1);
+  // Every row of the screen (patches/ink+6.8.0.patch draws a frame that tall again in place, rather than clearing the
+  // terminal first, which flashed on each key and each line PowerShell wrote).
+  const rows = Math.max(10, screenRows);
   const [buf, setBuf] = useState(() => buffer.create(''));
   const [top, setTop] = useState(0);
   const [left, setLeft] = useState(0);

@@ -146,11 +146,15 @@ export class Host {
     onChosen = () => {},
     // Settings the desktop window changes (`bell`, and `prefix` for the next start), to keep in host.json.
     onSettings = () => {},
-    // Inside Fleet's desktop window (FLEET_DESKTOP=1): the window draws the bar as tabs and a status
+    // Inside Fleet's desktop window (FLEET_DESKTOP): the window draws the bar as tabs and a status
     // strip from the state the host sends it (barState), so the apps get every row.
     desktop = false,
+    // A desktop window from before the apps drew every row of their screen (one that doesn't set
+    // FLEET_DESKTOP_ROWS=all) makes its terminal a row taller than it shows, the last hidden (the apps
+    // left it empty then): the apps get every row but that one, so none of theirs is hidden.
+    hiddenRow = false,
   }) {
-    Object.assign(this, { input, output, spawnApp: spawn, args, truecolor, onSwitch, onUpdate, setTimer, clearTimer, now, attentionEvery, bell, cwd, home, folders, onFolders, onChosen, onSettings, desktop });
+    Object.assign(this, { input, output, spawnApp: spawn, args, truecolor, onSwitch, onUpdate, setTimer, clearTimer, now, attentionEvery, bell, cwd, home, folders, onFolders, onChosen, onSettings, desktop, hiddenRow });
     // The bar's state as last sent to the desktop window, so the same state isn't sent again.
     this.sentBar = null;
     // In the desktop window: the panel or help on screen as content ({ title, hint, lines, focus })
@@ -210,7 +214,7 @@ export class Host {
 
   appSize() {
     const { columns, rows } = this.size();
-    return { columns, rows: Math.max(1, this.desktop ? rows : rows - 1) };
+    return { columns, rows: Math.max(1, this.desktop && !this.hiddenRow ? rows : rows - 1) };
   }
 
   /** Takes the screen and opens space `id`. Resolves `done` once the host has quit. */

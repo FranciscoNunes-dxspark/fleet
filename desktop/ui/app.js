@@ -70,18 +70,14 @@ const fit = new FitAddon.FitAddon();
 term.loadAddon(fit);
 
 /**
- * Sizes the terminal to its box with one row more than shows, the last one clipped (#terminal hides
- * it). The apps draw a row short of their screen (Ink would clear the whole screen every frame
- * otherwise) and end each frame on the row below; in a terminal Fleet's bar sat on that row, here it
- * would be an empty one. With the hidden row, what the apps draw fills everything that shows. The box
- * is rarely a whole number of rows high: the pixels left over stay at the bottom, showing a sliver of
- * that empty row above the strip, rather than going above the first row, where they read as an empty
- * line at the top of the window.
+ * Sizes the terminal to its box: the apps draw every row of it. The box is rarely a whole number of
+ * rows high, and the pixels left over stay at the bottom, above the strip, rather than above the first
+ * row, where they read as an empty line at the top of the window.
  */
 function fitTerm() {
   const size = fit.proposeDimensions();
   if (!size || !size.cols || !size.rows) return;
-  if (term.cols !== size.cols || term.rows !== size.rows + 1) term.resize(size.cols, size.rows + 1);
+  if (term.cols !== size.cols || term.rows !== size.rows) term.resize(size.cols, size.rows);
 }
 term.open(document.getElementById('terminal'));
 // The GPU renderer, several times faster than drawing with the page's own elements; where the web view

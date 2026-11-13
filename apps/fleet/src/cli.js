@@ -121,6 +121,9 @@ const host = new Host({
   onUpdate: () => updateFleet(true),
   // Fleet's desktop window (desktop/) sets this: it draws the bar itself, from the state the host sends.
   desktop: process.env.FLEET_DESKTOP === '1',
+  // A window that doesn't say FLEET_DESKTOP_ROWS=all is from before the apps drew every row, and its
+  // terminal has a hidden row at the bottom (an installed Fleet updates itself before its window does).
+  hiddenRow: process.env.FLEET_DESKTOP === '1' && process.env.FLEET_DESKTOP_ROWS !== 'all',
 });
 
 // However the host ends, the apps end with it and the terminal is given back.
