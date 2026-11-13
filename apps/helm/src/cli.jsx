@@ -50,6 +50,6 @@ const setTitle = (title) => process.stdout.write(`\x1b]0;${title.replace(/[\x00-
 // Clicks and the wheel, where the terminal can report them; set up before rendering, so mouse reports never reach Ink as keys.
 const mouse = await terminalMouse(stdin, stdout);
 
-const app = render(<App shell={shell} file={args.find((a) => !a.startsWith('-'))} cwd={cwd} setTitle={setTitle} mouse={mouse} />, { exitOnCtrlC: false, stdin, stdout: mouse?.stdout ?? stdout });
+const app = render(<App shell={shell} file={args.find((a) => !a.startsWith('-'))} cwd={cwd} setTitle={setTitle} mouse={mouse} />, { exitOnCtrlC: false, incrementalRendering: true, stdin, stdout: mouse?.stdout ?? stdout });
 await app.waitUntilExit();
 process.exit(0);

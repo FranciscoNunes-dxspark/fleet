@@ -136,7 +136,7 @@ const file = given ? resolve(given) : findHttpFiles(process.cwd()).map((f) => re
 const app = render(
   <App config={config} initialFile={file} askClaude={ask} checkUpdate={checkUpdate} installUpdate={updates ? installUpdate : undefined} setTitle={setTitle} mouse={mouse} copy={copy} openUrl={openInBrowser} notify={(title, body) => process.stdout.write(notification(title, body))} />,
   // Through the mouse's stdout, which watches the frames to select text from.
-  { exitOnCtrlC: false, stdin, stdout: mouse?.stdout ?? stdout },
+  { exitOnCtrlC: false, incrementalRendering: true, stdin, stdout: mouse?.stdout ?? stdout },
 );
 await app.waitUntilExit();
 process.exit(0);

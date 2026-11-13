@@ -98,7 +98,7 @@ const provider = demo ? demoAzure() : { ...createAzure({ token }), currentSubscr
 const app = render(
   <App config={config} provider={provider} open={opening} checkUpdate={checkUpdate} installUpdate={updates ? installUpdate : undefined} setTitle={setTitle} mouse={mouse} copy={copy} notify={(title, body) => process.stdout.write(notification(title, body))} askClaude={ask} />,
   // Through the mouse's stdout, which watches the frames to select text from.
-  { exitOnCtrlC: false, stdin, stdout: mouse?.stdout ?? stdout },
+  { exitOnCtrlC: false, incrementalRendering: true, stdin, stdout: mouse?.stdout ?? stdout },
 );
 await app.waitUntilExit();
 process.exit(0);

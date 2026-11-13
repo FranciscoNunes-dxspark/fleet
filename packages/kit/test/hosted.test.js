@@ -38,6 +38,25 @@ test("the screen kept is the last frame from the top, with what's drawn on it si
   assert.ok(kept.screen.endsWith('all of it!'));
 });
 
+test('the screen kept is the whole frame Ink says it drew, not its incremental writes, with what is drawn on it since', () => {
+  const kept = screenKeeper();
+  kept.write('\x1b[2K\x1b[Gone\ntwo');
+  kept.frame('one\ntwo');
+  assert.equal(kept.screen, '\x1b[Hone\ntwo');
+  // An incremental frame writes only the line that changed, which isn't the screen.
+  kept.write('\x1b[1A\x1b[1G\x1b[2Kone!\n\x1b[E');
+  kept.frame('one!\ntwo');
+  assert.equal(kept.screen, '\x1b[Hone!\ntwo');
+  // A selection painted over the frame after it stays, until the next frame.
+  kept.write('\x1b7\x1b[1;1H\x1b[7mone\x1b[27m\x1b8');
+  assert.ok(kept.screen.endsWith('\x1b8'));
+  // Once Ink says its frames, a write that looks like a whole frame of log-update's isn't taken for one.
+  kept.write('\x1b[2K\x1b[1A\x1b[2K\x1b[Gpartial');
+  assert.ok(kept.screen.startsWith('\x1b[Hone!\ntwo'));
+  // The first write (read as a frame, before Ink said any) and the two frames.
+  assert.equal(kept.starts, 3);
+});
+
 function fakeControl() {
   const sent = [];
   let onData = () => {};

@@ -211,6 +211,6 @@ const { terminalMouse } = await import('@fleet/kit/mouse.js');
 const mouse = await terminalMouse(terminal.stdin, terminal.stdout);
 // The family's folder (~/.family, or FAMILY_HOME): Pinch's mood and what Keel changes go there, for the other apps.
 const { familyDir } = await import('@fleet/kit/family.js');
-const app = render(React.createElement(App, { keel, checkUpdate, installUpdate, updater, mouse, familyHome: familyDir() }), { exitOnCtrlC: false, patchConsole: false, stdin: terminal.stdin, stdout: mouse?.stdout ?? terminal.stdout });
+const app = render(React.createElement(App, { keel, checkUpdate, installUpdate, updater, mouse, familyHome: familyDir() }), { exitOnCtrlC: false, incrementalRendering: true, patchConsole: false, stdin: terminal.stdin, stdout: mouse?.stdout ?? terminal.stdout });
 await app.waitUntilExit();
 process.exit(0);

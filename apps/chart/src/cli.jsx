@@ -109,7 +109,7 @@ process.on('exit', () => provider.cleanup?.());
 const app = render(
   <App config={config} provider={provider} cwd={resolve(rest[0] ?? '.')} openUrl={openUrl} checkUpdate={checkUpdate} installUpdate={updates ? installUpdate : undefined} setTitle={setTitle} mouse={mouse} copy={copy} />,
   // Through the mouse's stdout, which watches the frames to select text from.
-  { exitOnCtrlC: false, stdin, stdout: mouse?.stdout ?? stdout },
+  { exitOnCtrlC: false, incrementalRendering: true, stdin, stdout: mouse?.stdout ?? stdout },
 );
 await app.waitUntilExit();
 process.exit(0);

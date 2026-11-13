@@ -100,7 +100,7 @@ const app = render(
     mouse={mouse}
   />,
   // Through the mouse's stdout, which watches the frames to select text from.
-  { exitOnCtrlC: false, stdin, stdout: mouse?.stdout ?? stdout },
+  { exitOnCtrlC: false, incrementalRendering: true, stdin, stdout: mouse?.stdout ?? stdout },
 );
 
 // However it ends, the connection and what is transferring are closed by App's cleanup.

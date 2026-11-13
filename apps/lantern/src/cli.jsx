@@ -88,7 +88,7 @@ const mouse = await terminalMouse(stdin, stdout);
 const copy = (text) => copyToClipboard(text);
 const app = render(
   <App config={config} provider={demo ? demoLantern() : createLantern()} cwd={resolve(rest[0] ?? '.')} openUrl={openUrl} checkUpdate={checkUpdate} installUpdate={updates ? installUpdate : undefined} setTitle={setTitle} mouse={mouse} copy={copy} />,
-  { exitOnCtrlC: false, stdin, stdout: mouse?.stdout ?? stdout },
+  { exitOnCtrlC: false, incrementalRendering: true, stdin, stdout: mouse?.stdout ?? stdout },
 );
 await app.waitUntilExit();
 process.exit(0);
