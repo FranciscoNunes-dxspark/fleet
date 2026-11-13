@@ -2342,8 +2342,8 @@
   },
   {
    "name": "run",
-   "args": "[branch]",
-   "desc": "Run the pipeline (its own branch by default)"
+   "args": "[branch] [-stage …]",
+   "desc": "Run the pipeline (its own branch by default), leaving out each -stage"
   },
   {
    "name": "logs",

@@ -4,7 +4,7 @@ import { api } from '../api.js';
 import { useApi, useApp } from '../context.js';
 import { age, dateTime, dateTimeZone, defaultAt, localZone, pct } from '../format.js';
 import { t, tj, tx } from '../i18n.js';
-import { Chip, Confirm, ErrorBox, ExternalLink, Loading } from '../ui.jsx';
+import { Checkbox, Chip, Confirm, ErrorBox, ExternalLink, Loading } from '../ui.jsx';
 import { useProjectLabel, useSourceName } from '../orgs.js';
 import { FlakyTests } from './Pipelines.jsx';
 import { RunTimesChart } from '../charts.jsx';
@@ -118,10 +118,10 @@ export default function PipelineDetail({ target }) {
     }
   };
 
-  const queueOn = async (on) => {
+  const queueOn = async (on, skipStages = []) => {
     try {
-      await api('/pipelines/queue', { method: 'POST', body: { projectId, definitionId: Number(definitionId), branch: on } });
-      toast(t('Run queued on {branch}', { branch: on }));
+      await api('/pipelines/queue', { method: 'POST', body: { projectId, definitionId: Number(definitionId), branch: on, ...(skipStages.length ? { skipStages } : {}) } });
+      toast(skipStages.length ? t('Run queued on {branch}, skipping {n} stages', { branch: on, n: skipStages.length }) : t('Run queued on {branch}', { branch: on }));
       refresh();
       reload();
     } catch (e) {
@@ -180,7 +180,7 @@ export default function PipelineDetail({ target }) {
         </section>
       )}
 
-      {runningOn && <ScheduleRunForm now projectId={projectId} repoId={p?.repoId} branch={branch} onCancel={() => setRunningOn(false)} onSchedule={async ({ branch: on }) => { await queueOn(on); setRunningOn(false); }} />}
+      {runningOn && <ScheduleRunForm now projectId={projectId} definitionId={definitionId} repoId={p?.repoId} branch={branch} onCancel={() => setRunningOn(false)} onSchedule={async ({ branch: on, skipStages }) => { await queueOn(on, skipStages); setRunningOn(false); }} />}
       {scheduling && <ScheduleRunForm projectId={projectId} repoId={p?.repoId} branch={branch} onCancel={() => setScheduling(false)} onSchedule={scheduleRun} />}
 
       <section className="detail-section">
@@ -233,9 +233,22 @@ export default function PipelineDetail({ target }) {
   );
 }
 
-/** Run once at a set time: the branch (the pipeline's own by default) and when. */
-function ScheduleRunForm({ projectId, repoId, branch: home, now, onCancel, onSchedule }) {
+/**
+ * Run once at a set time: the branch (the pipeline's own by default) and when. Run now
+ * (`now`) also offers the pipeline's stages, all ticked, to leave some out of the run.
+ */
+function ScheduleRunForm({ projectId, definitionId, repoId, branch: home, now, onCancel, onSchedule }) {
   const { data: branches } = useApi(repoId ? `/repos/${encodeURIComponent(projectId)}/${encodeURIComponent(repoId)}/branches` : null);
+  const { data: stages } = useApi(now && definitionId ? `/pipelines/${encodeURIComponent(projectId)}/${encodeURIComponent(definitionId)}/stages` : null);
+  const [skipped, setSkipped] = useState(() => new Set());
+  const skipping = (stages || []).filter((s) => skipped.has(s.id)).map((s) => s.id);
+  const noneLeft = !!stages?.length && skipping.length >= stages.length;
+  const toggleStage = (id, on) => setSkipped((prev) => {
+    const next = new Set(prev);
+    if (on) next.delete(id);
+    else next.add(id);
+    return next;
+  });
   const [branch, setBranch] = useState(home || '');
   const [at, setAt] = useState(() => defaultAt());
   const [busy, setBusy] = useState(false);
@@ -248,7 +261,7 @@ function ScheduleRunForm({ projectId, repoId, branch: home, now, onCancel, onSch
   const submit = async (e) => {
     e.preventDefault();
     setBusy(true);
-    await onSchedule({ branch: branch.trim(), at: now ? undefined : new Date(at).toISOString() });
+    await onSchedule({ branch: branch.trim(), at: now ? undefined : new Date(at).toISOString(), skipStages: now ? skipping : [] });
     setBusy(false);
   };
   return (
@@ -259,12 +272,21 @@ function ScheduleRunForm({ projectId, repoId, branch: home, now, onCancel, onSch
         <TextField.Root className="mono" variant="surface" color="gray" list="schedule-run-branches" value={branch} onChange={(e) => setBranch(e.target.value)} spellCheck={false} required />
         <datalist id="schedule-run-branches">{(branches || []).map((b) => <option key={b.name} value={b.name} />)}</datalist>
       </label>
+      {now && stages?.length > 0 && (
+        <fieldset className="field run-stages">
+          <legend>{t('Stages to run')}</legend>
+          {stages.map((s) => (
+            <label key={s.id} className="check"><Checkbox checked={!skipped.has(s.id)} onChange={(e) => toggleStage(s.id, e.target.checked)} /> {s.name}</label>
+          ))}
+          {noneLeft && <span className="text-warn small">{t('Pick at least one stage to run.')}</span>}
+        </fieldset>
+      )}
       {!now && <label className="field">{t('When')}
         <TextField.Root variant="surface" color="gray" type="datetime-local" value={at} onChange={(e) => setAt(e.target.value)} required aria-describedby="run-at-zone" />
         {localZone() && <span className="muted small" id="run-at-zone">{t('{zone} time', { zone: localZone() })}</span>}
       </label>}
       <div className="complete-actions">
-        <Button size="1" variant="solid" type="submit" disabled={busy || !branch.trim() || (!now && !at)}>{now ? (busy ? t('Starting…') : t('Run')) : busy ? t('Scheduling…') : t('Schedule run')}</Button>
+        <Button size="1" variant="solid" type="submit" disabled={busy || !branch.trim() || (!now && !at) || noneLeft}>{now ? (busy ? t('Starting…') : t('Run')) : busy ? t('Scheduling…') : t('Schedule run')}</Button>
         <Button size="1" variant="ghost" color="gray" type="button" onClick={onCancel}>{t('Cancel')}</Button>
       </div>
     </form>

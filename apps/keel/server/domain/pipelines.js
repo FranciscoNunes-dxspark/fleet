@@ -97,6 +97,31 @@ export function wasDeclined(timeline = []) {
     && ((r.type === 'Task' && !isManualValidation(r)) || (r.type === 'Job' && !byRejection.has(r.id))));
 }
 
+/**
+ * The stages a YAML pipeline runs, from one of its runs' timelines, in order: `id` is the name
+ * Azure DevOps skips a stage by (its `identifier`, the YAML `stage:`), `name` the display name.
+ * A pipeline without stages of its own (a classic build, or YAML with jobs only) has one hidden
+ * stage, `__default`, which can't be skipped: it gets none.
+ */
+export function stagesOf(timeline = []) {
+  return timeline
+    .filter((r) => r.type === 'Stage' && r.identifier && !r.identifier.startsWith('__default'))
+    .sort((a, b) => a.order - b.order)
+    .map((r) => ({ id: r.identifier, name: r.name || r.identifier }));
+}
+
+/**
+ * The stages to skip in a manual run, checked against the pipeline's stages: unknown names
+ * and repeats dropped. Throws when nothing would be left to run.
+ */
+export function stagesToSkip(stages, skip = []) {
+  if (!Array.isArray(skip) || !skip.length) return [];
+  const known = new Set(stages.map((s) => s.id));
+  const out = [...new Set(skip.map(String))].filter((id) => known.has(id));
+  if (stages.length && out.length >= stages.length) throw Object.assign(new Error('Pick at least one stage to run.'), { status: 400 });
+  return out;
+}
+
 export function pipelineHealth(builds, repos, definitions = []) {
   const repoDefault = new Map(repos.map((r) => [r.id, r.defaultBranch]));
   // The pipeline's own page (Azure DevOps or GitHub) comes from its definition, not its runs.

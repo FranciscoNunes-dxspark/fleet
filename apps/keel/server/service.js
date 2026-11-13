@@ -8,7 +8,7 @@ import { createAzdoProvider } from './azdo/provider.js';
 import { createMockProvider } from './mock/provider.js';
 import { DAY, HOUR, enrichPR, sameIdentity, emailOf } from './domain/prs.js';
 import { releaseHealth } from './domain/releases.js';
-import { currentStage, pipelineHealth, wasDeclined } from './domain/pipelines.js';
+import { currentStage, pipelineHealth, stagesToSkip, wasDeclined } from './domain/pipelines.js';
 import { buildWorkload } from './domain/workload.js';
 import { buildAttention, isBlocked } from './domain/attention.js';
 import { buildInsights } from './domain/insights.js';
@@ -1978,8 +1978,17 @@ export function createService({
       return result;
     },
 
-    async queueBuild(projectId, definitionId, branch) {
-      const result = await provider.queueBuild(projectId, Number(definitionId), branch);
+    /** The stages a manual run can leave out ([] when it can't: one stage, no stages, or GitHub). */
+    async pipelineStages(projectId, definitionId) {
+      if (!(await tracked()).some((p) => p.id === projectId)) throw Object.assign(new Error('Unknown project'), { status: 400 });
+      const id = Number(definitionId);
+      const stages = await cached(`builds:stages:${projectId}:${id}`, () => provider.listPipelineStages(projectId, id), 5 * MIN);
+      return stages.length > 1 ? stages : [];
+    },
+
+    async queueBuild(projectId, definitionId, branch, { skipStages } = {}) {
+      const skip = Array.isArray(skipStages) && skipStages.length ? stagesToSkip(await this.pipelineStages(projectId, definitionId), skipStages) : [];
+      const result = await provider.queueBuild(projectId, Number(definitionId), branch, skip.length ? { skipStages: skip } : undefined);
       cache.invalidate('builds');
       return result;
     },

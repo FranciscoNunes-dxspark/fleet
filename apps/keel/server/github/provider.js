@@ -557,8 +557,14 @@ export function createGithubProvider({ org, token, client } = {}) {
       return { id: Number(buildId), status: 'cancelling' };
     },
 
+    // A workflow's jobs can't be left out of a run started by hand: no stages to pick.
+    async listPipelineStages() {
+      return [];
+    },
+
     /** Starts a workflow on a branch (its default when none is given). It needs a workflow_dispatch trigger. */
-    async queueBuild(_projectId, definitionId, branch) {
+    async queueBuild(_projectId, definitionId, branch, { skipStages = [] } = {}) {
+      if (skipStages.length) throw err("GitHub can't skip a workflow's jobs in a run started by hand.");
       const repo = await workflowRepo(definitionId);
       const r = await repoByName(repo);
       try {

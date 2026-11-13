@@ -5,6 +5,7 @@ import { marked } from 'marked';
 import { config } from '../config.js';
 import { createClient, seg } from './client.js';
 import { stageSummary } from '../domain/releases.js';
+import { stagesOf } from '../domain/pipelines.js';
 
 const EMPTY_GUID = '00000000-0000-0000-0000-000000000000';
 
@@ -1111,6 +1112,8 @@ export function createAzdoProvider({ orgUrl = config.orgUrl, pat = config.pat, t
         parentId: r.parentId || null,
         type: r.type,
         name: r.name,
+        // A stage's YAML name, which a run skips it by.
+        identifier: r.identifier || null,
         order: r.order ?? 0,
         state: r.state,
         result: r.result || null,
@@ -1431,7 +1434,24 @@ export function createAzdoProvider({ orgUrl = config.orgUrl, pat = config.pat, t
       }
     },
 
-    async queueBuild(projectId, definitionId, branch) {
+    /** A YAML pipeline's stages, as its latest run had them (Azure DevOps has no API that lists them without running the YAML). */
+    async listPipelineStages(projectId, definitionId) {
+      const d = await api(`${seg(projectId)}/_apis/build/builds`, { query: { definitions: definitionId, queryOrder: 'queueTimeDescending', $top: 1 } });
+      const latest = d.value?.[0];
+      if (!latest) return [];
+      const t = await api(`${seg(projectId)}/_apis/build/builds/${latest.id}/timeline`).catch((err) => (err.status === 404 ? null : Promise.reject(err)));
+      return stagesOf((t?.records || []).map((r) => ({ type: r.type, identifier: r.identifier || null, name: r.name, order: r.order ?? 0 })));
+    },
+
+    async queueBuild(projectId, definitionId, branch, { skipStages = [] } = {}) {
+      // Only the Pipelines API skips stages; the Build API it otherwise goes through has no such field.
+      if (skipStages.length) {
+        const r = await api(`${seg(projectId)}/_apis/pipelines/${Number(definitionId)}/runs`, {
+          method: 'POST',
+          body: { stagesToSkip: skipStages, ...(branch ? { resources: { repositories: { self: { refName: `refs/heads/${branch}` } } } } : {}) },
+        });
+        return { id: r.id, webUrl: r._links?.web?.href };
+      }
       const b = await api(`${seg(projectId)}/_apis/build/builds`, {
         method: 'POST',
         body: { definition: { id: definitionId }, sourceBranch: branch ? `refs/heads/${branch}` : undefined },

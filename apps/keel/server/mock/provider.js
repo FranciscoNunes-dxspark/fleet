@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { stageSummary } from '../domain/releases.js';
+import { stagesOf } from '../domain/pipelines.js';
 import { demoFile } from './files.js';
 import { DEMO_FILES } from './advisories.js';
 import { demoSecuritySettings } from './security.js';
@@ -527,8 +528,14 @@ function demoTimeline(b) {
   let stopped = false;
   let logId = 1;
   PLAN.forEach(([stageName, jobName, tasks], si) => {
-    const stage = { id: `${b.id}-s${si}`, parentId: null, type: 'Stage', name: stageName, order: si + 1, errorCount: 0, warningCount: 0, issues: [], logId: null };
+    const stage = { id: `${b.id}-s${si}`, parentId: null, type: 'Stage', name: stageName, identifier: stageName.replace(/\W+/g, ''), order: si + 1, errorCount: 0, warningCount: 0, issues: [], logId: null };
     const job = { id: `${b.id}-j${si}`, parentId: stage.id, type: 'Job', name: jobName, order: 1, errorCount: 0, warningCount: 0, issues: [], logId: logId++ };
+    // A stage left out of a manual run: skipped from the start, as Azure DevOps shows it.
+    if (b.skipStages?.includes(stage.identifier)) {
+      const skipped = { state: 'completed', result: 'skipped', startedAt: null, finishedAt: null };
+      records.push({ ...stage, ...skipped }, { ...job, ...skipped }, ...tasks.map(([name], ti) => ({ id: `${b.id}-t${si}-${ti}`, parentId: job.id, type: 'Task', name, order: ti + 1, errorCount: 0, warningCount: 0, issues: [], logId: logId++, ...skipped })));
+      return;
+    }
     const stageStart = t;
     const taskRecs = tasks.map(([name, secs], ti) => {
       const rec = { id: `${b.id}-t${si}-${ti}`, parentId: job.id, type: 'Task', name, order: ti + 1, errorCount: 0, warningCount: 0, issues: [], logId: logId++ };
@@ -1452,11 +1459,16 @@ export function createMockProvider() {
       return delay({ total: 412, passed: 412 - failed - 2, failed, other: 2 });
     },
 
-    async queueBuild(projectId, definitionId, branch) {
+    listPipelineStages(projectId, definitionId) {
+      const latest = builds.find((b) => b.definition.id === Number(definitionId));
+      return delay(latest ? stagesOf(demoTimeline(latest)) : []);
+    },
+
+    async queueBuild(projectId, definitionId, branch, { skipStages = [] } = {}) {
       const prev = builds.find((b) => b.definition.id === definitionId);
       if (!prev) throw notFound('Pipeline');
       const b = {
-        ...prev, id: nextBuild++, status: 'notStarted', result: null, reason: 'manual', sourceBranch: branch || prev.sourceBranch,
+        ...prev, id: nextBuild++, status: 'notStarted', result: null, reason: 'manual', sourceBranch: branch || prev.sourceBranch, skipStages,
         requestedFor: ME, queuedAt: iso(Date.now()), startedAt: null, finishedAt: null, buildNumber: `manual.${nextBuild}`,
       };
       builds.unshift(b);
