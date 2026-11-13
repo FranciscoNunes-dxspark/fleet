@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import { readActivity, readMoods } from '@fleet/kit/family.js';
 import { familyMood, reactionTo } from '../src/moods.js';
 import { FACES, PALETTE, moodFor, moodLine, petPixels, petRows, troubles } from '../src/pet.js';
+import { demoSession } from '../src/demo.js';
 import { KEYS, shows, start, tempHome, type, until } from './helpers.js';
 
 let cleanup;
@@ -58,6 +59,33 @@ test('exit ends the shell, the screen stays, and ↵ starts another', async () =
   assert.match(app.lastFrame(), /Welcome to the demo shell/);
   app.stdin.write(KEYS.enter);
   await until(() => app.host.state.calls.filter((c) => c[0] === 'terminal').length === 2, 'a new shell');
+  app.unmount();
+});
+
+test('output that streams in draws the Console again by itself, and ↑ looks back over all of it', async () => {
+  const host = demoSession();
+  let shell;
+  const open = host.terminal;
+  host.terminal = function (options) {
+    shell = { options, term: open.call(this, options) };
+    return shell.term;
+  };
+  const app = start({ host });
+  await until(shows(app, 'notes.txt'), 'the server folder');
+  app.stdin.write('3');
+  await until(() => shell && shows(app, 'Welcome to the demo shell')(), 'the shell');
+  app.stdin.write('\x1c');
+  await until(shows(app, 'type in it'), 'the keys back with the view');
+  // Far more than the screen holds, each chunk told as the shell tells it, with no key or App state between.
+  for (let i = 1; i <= 120; i++) {
+    shell.term.vt.write(`streamed ${i}\r\n`);
+    shell.options.onChange();
+  }
+  await until(shows(app, 'streamed 120'), 'the newest line');
+  assert.doesNotMatch(app.lastFrame(), /streamed 1\b/);
+  // How far back there is counts what came after the Console last drew whole.
+  for (let i = 0; i < 6; i++) app.stdin.write('\x1b[5~');
+  await until(() => /streamed 1\b/.test(app.lastFrame()), 'the oldest line, scrolled back to');
   app.unmount();
 });
 

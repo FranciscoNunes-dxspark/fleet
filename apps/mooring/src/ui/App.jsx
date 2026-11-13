@@ -149,11 +149,12 @@ export function App({ config: initialConfig, cwd = process.cwd(), local, makeSes
   const [entries, setEntries] = useState([]);
   const [busy, setBusy] = useState(null);
   const [update, setUpdate] = useState(null);
-  // The Console's shell (terminal.js) and how it ended; `shellTick` makes the screen draw again as output comes.
+  // The Console's shell (terminal.js) and how it ended. Who hears that its screen changed: the Console's rows
+  // (ConsoleView's ConsoleLines), not the whole app.
   const shellRef = useRef(null);
   const [shell, setShell] = useState(null);
   const [shellEnded, setShellEnded] = useState(null);
-  const [, setShellTick] = useState(0);
+  const shellChanges = useRef(new Set()).current;
   const shellSize = useRef({ columns: 80, rows: 24 });
   const [welcome, setWelcome] = useState(true);
   const [loaded, setLoaded] = useState(false);
@@ -558,7 +559,9 @@ export function App({ config: initialConfig, cwd = process.cwd(), local, makeSes
     const mine = session.terminal({
       ...shellSize.current,
       dir: panesRef.current.remote.dir,
-      onChange: () => setShellTick((n) => n + 1),
+      onChange: () => {
+        if (shellRef.current === mine) for (const changed of shellChanges) changed();
+      },
       onExit: (info) => {
         if (shellRef.current !== mine) return;
         setShellEnded(info);
@@ -1096,7 +1099,7 @@ export function App({ config: initialConfig, cwd = process.cwd(), local, makeSes
   } else if (view === 'log') {
     main = <LogView entries={entries} ctx={ctx} width={W} height={mainH} active={viewActive} />;
   } else if (view === 'console') {
-    main = <ConsoleView terminal={shell} ended={shellEnded} conn={conn} ctx={ctx} width={W} height={mainH} active={viewActive} typing={focus === 'terminal'} />;
+    main = <ConsoleView terminal={shell} changes={shellChanges} ended={shellEnded} conn={conn} ctx={ctx} width={W} height={mainH} active={viewActive} typing={focus === 'terminal'} />;
   } else if (view === 'hosts') {
     main = <HostsView hosts={config.hosts ?? []} conn={conn} ctx={ctx} width={W} height={mainH} active={viewActive} />;
   } else if (view === 'transfers') {
