@@ -67,7 +67,7 @@ FLEET_COMMAND="node ../apps/fleet/bin/fleet.js" npm run dev          # macOS, Li
 $env:FLEET_COMMAND = "node ..\apps\fleet\bin\fleet.js"; npm run dev   # Windows PowerShell
 ```
 
-Fleet starts in `FLEET_CWD`, or in your home folder when that isn't set. Inside, everything works as in a terminal: the prefix (`ctrl+b`), the apps, the mouse and the split view. When Fleet ends, the window offers to start it again. Closing the window ends Fleet and its apps.
+Fleet starts in `FLEET_CWD`, or in your home folder when that isn't set. Inside, everything works as in a terminal: the prefix (`ctrl+b`), the apps, the mouse and the split view. The window has the keyboard as soon as it opens and whenever it comes back to the front, and what you type while Fleet is still starting reaches it once it's up. When Fleet ends, the window offers to start it again. Closing the window ends Fleet and its apps.
 
 ### Installers
 

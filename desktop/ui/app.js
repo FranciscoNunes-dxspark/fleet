@@ -133,7 +133,13 @@ Promise.all(['400', '700'].map((weight) => document.fonts.load(`${weight} ${term
 
 const $ = (id) => document.getElementById(id);
 // A write failing (Fleet gone, being restarted) is already said by pty-exit.
-const send = (data) => invoke('write', { data }).catch(() => {});
+// Keys typed before Fleet's pseudo-terminal is up (the window has just opened, or Fleet is starting
+// again) wait for it, rather than going to a terminal that isn't there yet and being lost.
+let waiting = [];
+const send = (data) => {
+  if (waiting) return void waiting.push(data);
+  invoke('write', { data }).catch(() => {});
+};
 /** Tells the host something (`ESC ] 5381 ; <json> BEL`, typed as keys are: the host takes it out). */
 const tell = (msg) => send(`\x1b]5381;${JSON.stringify(msg)}\x07`);
 
@@ -839,6 +845,16 @@ term.onResize(({ cols, rows }) => {
 
 new ResizeObserver(() => fitTerm()).observe($('terminal'));
 
+/** The keys to the terminal, unless one of the window's own fields has them, or Fleet has ended. */
+function focusTerm() {
+  if (!ended.hidden) return $('again').focus();
+  const at = document.activeElement;
+  // xterm's own input is a textarea too: the terminal holding the page's focus is still focused again,
+  // as the web view itself may not have the keyboard.
+  if (at && !term.element.contains(at) && at.matches('input, textarea, select')) return;
+  term.focus();
+}
+
 function finished(text) {
   endedText.textContent = text;
   ended.hidden = false;
@@ -849,9 +865,13 @@ async function begin() {
   ended.hidden = true;
   term.reset();
   lastToast = null;
+  waiting ??= [];
   try {
     await invoke('start', { cols: term.cols, rows: term.rows, output });
-    term.focus();
+    const typed = waiting.join('');
+    waiting = null;
+    if (typed) send(typed);
+    focusTerm();
     // The palette's list (and the state, again): the host sends them at its start and when asked.
     // Asked again a few times while none has come, in case Fleet wasn't reading yet.
     const hello = (tries) =>
@@ -926,6 +946,14 @@ const showMaximised = async () => {
 };
 win.onResized(showMaximised);
 showMaximised();
+
+// The keys go to the terminal when the window opens and whenever it comes to the front again, unless a
+// field of the window's own (the palette, settings, Claude's question) has them. Focusing the page alone
+// isn't enough on Windows: WebView2 often doesn't take the keyboard when a window without the system's
+// frame opens, so the page thinks the terminal has it while keys go nowhere until a click. Asking the
+// window for focus moves it into the web view.
+win.setFocus().catch(() => {}).finally(focusTerm);
+win.onFocusChanged(({ payload: focused }) => focused && focusTerm());
 
 begin();
 setTimeout(lookForUpdate, 10_000);
