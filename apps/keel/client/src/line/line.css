@@ -715,10 +715,10 @@ button.tile-hit { cursor: pointer; }
 .list-card-edit { display: flex; gap: 8px; padding: 0 12px 12px; }
 .list-card-edit .input-inline { flex: 1 1 0; max-width: none; min-width: 0; border-color: var(--line-strong); background: var(--surface-2); min-height: 32px; padding: 5px 8px; font-size: var(--text-md); }
 
-/* Work items' views (All open, Current sprint…) scroll sideways on a phone rather than wrapping into a block. */
+/* Work items' views (All open, Current sprint…) and the Inbox's filters scroll sideways on a phone rather than wrapping into a block. */
 @media (max-width: 900px) {
-  .page > .segmented[role="tablist"] { display: flex; flex-wrap: nowrap; overflow-x: auto; width: 100%; scrollbar-width: none; margin-bottom: 10px; }
-  .page > .segmented[role="tablist"] button { flex: none; }
+  .page > .segmented[role="tablist"], .inbox-filters { display: flex; flex-wrap: nowrap; overflow-x: auto; width: 100%; scrollbar-width: none; margin-bottom: 10px; }
+  .page > .segmented[role="tablist"] button, .inbox-filters button { flex: none; }
 }
 
 /* Phones' menu: a round button in the bottom right corner, the menu opening up from it. */

@@ -10,7 +10,7 @@ import { api } from '../api.js';
 import { useApi, useApp } from '../context.js';
 import { Avatar, Logo, Tip, statusLine, useMedia } from '../ui.jsx';
 import { useSticky } from '../sticky.js';
-import { PULL_READY, useBackCloses, usePullToRefresh } from '../touch.js';
+import { PULL_READY, useBackCloses, usePullToRefresh, useScrollMemory, useTuckOnScroll } from '../touch.js';
 import { isHomeable, saveHome } from '../home.js';
 import { Icon } from '../icons.jsx';
 import { logoMood } from '../mark.js';
@@ -111,6 +111,9 @@ export default function LineShell({ children }) {
   // Pull down at the top of a page to refresh it, as in any app (the Desk's panes scroll on their own).
   const hardRefresh = useHardRefresh(setSpinning);
   const pull = usePullToRefresh(() => { if (!spinning) hardRefresh(); }, phone && view !== 'desk');
+  // The top bar tucks away while the page scrolls down, and comes back as it scrolls up.
+  const tucked = useTuckOnScroll(phone && view !== 'desk' && !more, pathname);
+  const backToPlace = useScrollMemory(pathname + search);
   const needs = [
     s?.approvals && { label: t(s.approvals === 1 ? '1 approval' : '{n} approvals', { n: s.approvals }), stage: 'deploying', tone: 'warn', mine: true },
     s?.myReviews && { label: t(s.myReviews === 1 ? '1 review' : '{n} reviews', { n: s.myReviews }), stage: 'review', tone: 'accent', mine: true },
@@ -120,7 +123,7 @@ export default function LineShell({ children }) {
 
   return (
     <LineData.Provider value={line}>
-      <div className={`ls ls-${view}${home ? ' ls-home' : ''}${onlyMine ? ' line-only-mine' : ''}${phone ? ' ls-phone' : ` ls-dock${collapsed ? ' ls-collapsed' : ''}`}`}>
+      <div className={`ls ls-${view}${home ? ' ls-home' : ''}${onlyMine ? ' line-only-mine' : ''}${phone ? ` ls-phone${tucked ? ' ls-tucked' : ''}` : ` ls-dock${collapsed ? ' ls-collapsed' : ''}`}`}>
         {!phone && (
           <Dock
             section={section} sectionTo={sectionTo} summary={s} mood={mood} attention={attention.data}
@@ -204,7 +207,7 @@ export default function LineShell({ children }) {
         </div>
 
         {/* Phones: the menu, in the bottom right corner within reach of a thumb. */}
-        {phone && <Tabs section={section} sectionTo={sectionTo} summary={s} more={more} setMore={setMore} view={view} spinning={spinning} setSpinning={setSpinning} />}
+        {phone && <Tabs section={section} sectionTo={sectionTo} summary={s} more={more} setMore={setMore} view={view} spinning={spinning} setSpinning={setSpinning} backToPlace={backToPlace} />}
       </div>
     </LineData.Provider>
   );
@@ -424,7 +427,7 @@ function Dock({ section, sectionTo, summary: s, mood, attention, spinning, setSp
 }
 
 /** Phones: the five sections as a bar along the bottom, and More for everything else. */
-function Tabs({ section, sectionTo, summary: s, more, setMore, spinning, setSpinning }) {
+function Tabs({ section, sectionTo, summary: s, more, setMore, spinning, setSpinning, backToPlace }) {
   const { live } = useApp();
   const { pathname } = useLocation();
   const navigate = useNavigate();
@@ -435,8 +438,9 @@ function Tabs({ section, sectionTo, summary: s, more, setMore, spinning, setSpin
   useBackCloses(more, () => setMore(false));
   // Tapping the tab you're on, as in a phone's own apps: back to the top of the page, and from
   // the top to the section's first page.
+  // Another tab opens its page where you left it.
   const again = (e, sec) => {
-    if (section?.id !== sec.id) return;
+    if (section?.id !== sec.id) { backToPlace(); return; }
     e.preventDefault();
     if (window.scrollY > 0) window.scrollTo({ top: 0, behavior: 'smooth' });
     else if (pathname !== sec.to) navigate(sec.to);

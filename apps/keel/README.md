@@ -79,6 +79,8 @@ The **sidebar** on the left holds the three views (Line, Desk, Control room), th
 
 On a touch screen it behaves like an app rather than a web page. Pull down at the top of a page to refresh it from Azure DevOps (not on the Desk, whose panes scroll on their own). Tapping the tab you're already on scrolls back to the top, and from the top goes to that section's first page. The page doesn't bounce past its ends, a tap presses in what it touched, the frame (top bar, tabs, the line) isn't selected by a long press, and in landscape it keeps clear of the notch. Opening Keel from a notification or a home-screen shortcut reuses the window that's already open.
 
+Scrolling down tucks the top bar away, the line moving up into its place, and scrolling back up brings it back. Swipe the details panel to the right to close it (a flick does too; let go early and it springs back). Each tab opens its page where you left it, or at its top the first time. Page descriptions are one line, the rest a tap away, and the tick marks under each page's title are left out. The Inbox's filters and Work items' views scroll sideways in one row, the Board shows one column at a time with the next peeking in and stops on each as you swipe, small buttons are 32px tall and the details panel's action bar 40px, and the install banner never covers an open panel.
+
 What each page does:
 
 | Page | For |

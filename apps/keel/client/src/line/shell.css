@@ -112,6 +112,17 @@
   .list-card-hit:active { background: var(--surface-2); }
   .line-menu-pages a:active, .line-menu-row:active { background: var(--surface-3); }
   .drawer { padding-bottom: env(safe-area-inset-bottom, 0px); }
+  /* Something a finger can hit: small buttons 32px tall, and the panel's action bar 40px. */
+  .rt-BaseButton.rt-r-size-1 { --base-button-height: 32px; }
+  .sticky-actions .rt-BaseButton { --base-button-height: 40px; height: var(--base-button-height); margin: 0; padding-block: 0; padding-inline: var(--space-3); }
+}
+
+/* Scrolling down a phone's page tucks the top bar away and the line moves up into its place, so
+   the page has the room; scrolling up brings it back (touch.js useTuckOnScroll). */
+@media (max-width: 900px) {
+  .ls-phone .line-top, .ls-phone .line-rail-compact { transition: transform var(--dur-slow) ease-out; }
+  .ls-tucked .line-top { transform: translateY(-100%); }
+  .ls-tucked .line-rail-compact { transform: translateY(calc(-1 * var(--chrome-h))); }
 }
 
 /* Pull to refresh: a round button that follows the finger down from under the top bar, and
