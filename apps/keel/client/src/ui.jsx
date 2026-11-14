@@ -11,7 +11,7 @@ import { useSticky } from './sticky.js';
 import { Icon } from './icons.jsx';
 import { stageName, stageOfPath } from './line/names.js';
 import { MARK } from './mark.js';
-import { useBackCloses } from './touch.js';
+import { useBackCloses, useSwipeToClose } from './touch.js';
 
 const CHEVRON = `M${MARK.chevron.points.map(([x, y]) => `${x} ${y}`).join(' L')} Z`;
 
@@ -166,6 +166,7 @@ export function PageHeader({ title, sub, children }) {
   const marker = useRef(null);
   const header = useRef(null);
   const [stuck, setStuck] = useState(false);
+  const [subOpen, setSubOpen] = useState(false);
   // Pinned when the spot above it scrolls under the top bar. Pinned, the header shrinks, so the page
   // gets shorter, and a page a little taller than the window scrolls back by that much; unpinning
   // as soon as the spot shows again would make the page taller, pin it again, and flicker. So it
@@ -193,7 +194,8 @@ export function PageHeader({ title, sub, children }) {
           <div className="page-title-text">
             {stage && <div className="page-eyebrow">{stageName(stage)}</div>}
             <h1>{title}</h1>
-            {sub && <p className="page-sub">{sub}</p>}
+            {/* On a phone it's one line, the rest a tap away (styles.css). */}
+            {sub && <p className={`page-sub${subOpen ? ' page-sub-open' : ''}`} onClick={() => setSubOpen((o) => !o)}>{sub}</p>}
           </div>
         </div>
         {children && <div className="page-actions">{children}</div>}
@@ -290,6 +292,8 @@ export function Drawer({ open, onClose, children, label, docked = false }) {
   }, [open, docked, wide]);
   // Going back closes the panel rather than the page under it.
   useBackCloses(open && !docked, onClose);
+  // And on a touch screen, swiping it to the right does too.
+  useSwipeToClose(ref, onClose, open && !docked);
   if (!open) return null;
   // The panel's own buttons, pinned to its top corner while its contents scroll under them.
   const tools = (

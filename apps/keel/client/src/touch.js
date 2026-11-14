@@ -1,7 +1,8 @@
 // What makes Keel behave like an app rather than a web page: going back (the browser's button,
-// Android's back button or gesture) closes the pane that's open instead of leaving the page, and
-// on a phone pulling down at the top of a page refreshes it.
-import { useEffect, useRef, useState } from 'react';
+// Android's back button or gesture) closes the pane that's open instead of leaving the page; and
+// on a phone, pulling down at the top of a page refreshes it, the top bar tucks away while the page
+// scrolls down, and the details panel is swiped away to the right.
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 
 const touchScreen = () => typeof window !== 'undefined' && !!window.matchMedia?.('(pointer: coarse)').matches;
 
@@ -125,4 +126,158 @@ export function usePullToRefresh(onRefresh, enabled) {
     };
   }, [enabled]);
   return pull;
+}
+
+/**
+ * True while the page is being scrolled down past its top, false once it scrolls back up a
+ * little or reaches the top: the phone's top bar tucks away to give the page the room.
+ */
+export function useTuckOnScroll(enabled, resetKey) {
+  const [tucked, setTucked] = useState(false);
+  useEffect(() => setTucked(false), [resetKey]);
+  useEffect(() => {
+    if (!enabled) { setTucked(false); return undefined; }
+    let last = window.scrollY;
+    let frame = 0;
+    const check = () => {
+      frame = 0;
+      const y = window.scrollY;
+      const dy = y - last;
+      // A few pixels either way is a finger resting, not a direction.
+      if (y < 80) setTucked(false);
+      else if (dy > 8) setTucked(true);
+      else if (dy < -8) setTucked(false);
+      else return;
+      last = y;
+    };
+    const onScroll = () => { if (!frame) frame = requestAnimationFrame(check); };
+    window.addEventListener('scroll', onScroll, { passive: true });
+    return () => { window.removeEventListener('scroll', onScroll); cancelAnimationFrame(frame); };
+  }, [enabled]);
+  return tucked;
+}
+
+/** How far right a swipe has to carry a panel, as a share of its width, before letting go closes it. */
+export const SWIPE_CLOSE = 0.3;
+
+/** Does a swipe that moved `dx` right, `dy` down in `ms` close a panel `width` wide? A flick does too. */
+export function swipeCloses(dx, dy, ms, width) {
+  if (dx <= 0 || Math.abs(dy) > dx) return false;
+  return dx >= width * SWIPE_CLOSE || (dx > 40 && dx / Math.max(ms, 1) > 0.6);
+}
+
+// Something under the finger that scrolls sideways itself (a diff, a wide table, code) keeps the swipe.
+const scrollsSideways = (el, stop) => {
+  for (let n = el; n && n !== stop; n = n.parentElement) {
+    if (n.scrollWidth > n.clientWidth + 1 && /auto|scroll/.test(getComputedStyle(n).overflowX)) return true;
+    if (n.matches?.('input, textarea, select, [contenteditable="true"]')) return true;
+  }
+  return false;
+};
+
+/**
+ * A panel (`ref`) a finger drags right to close with `onClose`, as an app's sheets do: it follows
+ * the finger, the backdrop fading with it, and springs back if let go short of closing.
+ */
+export function useSwipeToClose(ref, onClose, enabled) {
+  const closeRef = useRef(onClose);
+  closeRef.current = onClose;
+  useEffect(() => {
+    if (!enabled || !touchScreen()) return undefined;
+    // The panel can mount a render after this runs (Radix's portal), so it's found at each touch.
+    let el = null;
+    const scrim = () => el?.parentElement?.querySelector('.drawer-scrim');
+    let from = null;
+    let dragging = false;
+    const paint = (dx, animate) => {
+      el.style.transition = animate ? 'transform var(--dur-slow) ease-out' : 'none';
+      el.style.transform = dx ? `translateX(${dx}px)` : '';
+      const s = scrim();
+      if (s) {
+        s.style.transition = el.style.transition.replace('transform', 'opacity');
+        s.style.opacity = dx ? String(Math.max(0, 1 - dx / el.offsetWidth)) : '';
+      }
+    };
+    const down = (e) => {
+      el = ref.current;
+      from = el && el.contains(e.target) && e.touches.length === 1 && !scrollsSideways(e.target, el) ? { x: e.touches[0].clientX, y: e.touches[0].clientY, t: e.timeStamp } : null;
+      dragging = false;
+    };
+    const move = (e) => {
+      if (!from) return;
+      const dx = e.touches[0].clientX - from.x;
+      const dy = e.touches[0].clientY - from.y;
+      if (!dragging) {
+        // Decide once, after a few pixels: mostly sideways and rightwards is ours, anything else is a scroll.
+        if (Math.abs(dx) < 10 && Math.abs(dy) < 10) return;
+        if (dx <= 0 || Math.abs(dy) > dx) { from = null; return; }
+        dragging = true;
+      }
+      e.preventDefault();
+      paint(Math.max(0, dx), false);
+    };
+    const up = (e) => {
+      if (!from || !dragging) { from = null; return; }
+      const touch = e.changedTouches[0];
+      const dx = touch.clientX - from.x;
+      const dy = touch.clientY - from.y;
+      const ms = e.timeStamp - from.t;
+      from = null;
+      dragging = false;
+      if (swipeCloses(dx, dy, ms, el.offsetWidth)) {
+        paint(el.offsetWidth, true);
+        setTimeout(() => closeRef.current(), 160);
+      } else {
+        paint(0, true);
+      }
+    };
+    window.addEventListener('touchstart', down, { passive: true });
+    window.addEventListener('touchmove', move, { passive: false });
+    window.addEventListener('touchend', up);
+    window.addEventListener('touchcancel', up);
+    return () => {
+      window.removeEventListener('touchstart', down);
+      window.removeEventListener('touchmove', move);
+      window.removeEventListener('touchend', up);
+      window.removeEventListener('touchcancel', up);
+    };
+  }, [ref, enabled]);
+}
+
+/**
+ * Each page's place, kept while Keel is open: `back()` before moving to another tab makes the
+ * page it lands on open where you left it (or at its top, the first time), as an app's tabs do.
+ * The page may still be loading, so it tries for a moment, and stops as soon as you touch it.
+ */
+export function useScrollMemory(key) {
+  const places = useRef(new Map());
+  const wanted = useRef(false);
+  const keyRef = useRef(key);
+  useEffect(() => {
+    const onScroll = () => places.current.set(keyRef.current, window.scrollY);
+    window.addEventListener('scroll', onScroll, { passive: true });
+    return () => window.removeEventListener('scroll', onScroll);
+  }, []);
+  useLayoutEffect(() => {
+    keyRef.current = key;
+    if (!wanted.current) return undefined;
+    wanted.current = false;
+    const y = places.current.get(key) || 0;
+    let timer = 0;
+    const until = Date.now() + 2000;
+    const stop = () => clearTimeout(timer);
+    const attempt = () => {
+      window.scrollTo(0, y);
+      if (Math.abs(window.scrollY - y) > 2 && Date.now() < until) timer = setTimeout(attempt, 60);
+    };
+    attempt();
+    window.addEventListener('touchstart', stop, { passive: true, once: true });
+    window.addEventListener('wheel', stop, { passive: true, once: true });
+    return () => {
+      stop();
+      window.removeEventListener('touchstart', stop);
+      window.removeEventListener('wheel', stop);
+    };
+  }, [key]);
+  return () => { wanted.current = true; };
 }
