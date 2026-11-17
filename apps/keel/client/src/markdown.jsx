@@ -2,15 +2,16 @@ import { useEffect, useMemo, useState } from 'react';
 import { marked } from 'marked';
 import DOMPurify from 'dompurify';
 import { useApp } from './context.js';
+import { imageSource } from './images.js';
 import { t } from './i18n.js';
 import { TextArea } from '@radix-ui/themes';
 
 marked.setOptions({ gfm: true, breaks: true });
 
 // PR text comes from other people, so everything is sanitized. Links open in a
-// new tab, and images hosted in one of your Azure DevOps organizations load
-// through the server (they need your PAT); any other image is dropped rather
-// than fetched. Relative addresses are the primary organization's.
+// new tab; images are shown only from your Azure DevOps organizations (through the
+// server, which has your PAT) or written into the text as data: (images.js), and
+// any other is dropped rather than fetched.
 let orgPrefixes = [];
 DOMPurify.addHook('afterSanitizeAttributes', (node) => {
   if (node.tagName === 'A' && node.getAttribute('href')) {
@@ -18,15 +19,9 @@ DOMPurify.addHook('afterSanitizeAttributes', (node) => {
     node.setAttribute('rel', 'noopener noreferrer');
   }
   if (node.tagName === 'IMG') {
-    const src = node.getAttribute('src') || '';
-    let abs = '';
-    try {
-      abs = orgPrefixes.length ? new URL(src, orgPrefixes[0]).href : '';
-    } catch {
-      abs = '';
-    }
-    if (abs && orgPrefixes.some((prefix) => abs.toLowerCase().startsWith(prefix.toLowerCase()))) {
-      node.setAttribute('src', `/api/image?url=${encodeURIComponent(abs)}`);
+    const src = imageSource(node.getAttribute('src'), orgPrefixes);
+    if (src) {
+      node.setAttribute('src', src);
       node.setAttribute('loading', 'lazy');
     } else {
       node.replaceWith(Object.assign(document.createElement('span'), { className: 'md-img-blocked', textContent: `[image: ${node.getAttribute('alt') || 'external'}]` }));
