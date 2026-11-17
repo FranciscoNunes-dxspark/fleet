@@ -1,6 +1,7 @@
 // Every user-facing operation, written once: keys and slash commands both call these with `ctx`
 // (built in ui/App.jsx). Questions before anything destructive belong here too (ctx.confirm).
-import { writeFile } from 'node:fs/promises';
+import { readFile, writeFile } from 'node:fs/promises';
+import { existsSync } from 'node:fs';
 import { extname, resolve } from 'node:path';
 import { label } from './azure/arm.js';
 import { EXPORTS } from './export.js';
@@ -14,6 +15,7 @@ import { MARKER_KINDS, firstSeenAfter, firstSeenText, markerDetail, markerWords 
 import { deploymentsBefore, exceptionContext, framesInCheckout, framesOf, gitLogCommand, incidentFile, incidentMarkdown, parseGitLog, requestContext, requestOf, sqlTarget, writeupPrompt } from './incident.js';
 import { APP_NAMES, FAMILY, contextIn, copiedNote, describeContext, logActivity, notMine, projectAt, projectWiring, readActivity, repoRoot, takeLine, trawlLine } from '@fleet/kit/family.js';
 import { familyChoices } from './kin.js';
+import { mergeSettings, readSettingsFile, settingsFileName, settingsJson } from './settingsfile.js';
 import { referenceWords, resolved as refResolved } from './keyvault.js';
 import { functionLogQuery, functionRunsQuery, invocation, isDisabled, isHttp, prettyBody, triggerLabel, withDisabled } from './functions.js';
 import { parseWatch, watchEvery } from './watches.js';
@@ -169,7 +171,7 @@ export async function showSettings(ctx, which, { replace = false, index, shown =
   ctx.showPicker(
     {
       title: `Settings of ${label(target)}`,
-      hint: 'v show · e edit · n new · x remove · d compare · y copy',
+      hint: 'v show · e edit · n new · x remove · d compare · y copy · s save to a file · l load one · c copy all to…',
       empty: 'No settings. n adds one.',
       index,
       items: names.map((n) => ({
@@ -202,10 +204,94 @@ export async function showSettings(ctx, which, { replace = false, index, shown =
           if (value != null) await saveSettings(ctx, target, settings, { ...settings, [name.trim()]: value }, again);
         },
         d: () => compareSettings(ctx, target),
+        s: () => exportSettings(ctx, target),
+        l: () => importSettings(ctx, target, undefined, again),
+        c: () => copySettings(ctx, target),
       },
     },
     { replace },
   );
+}
+
+/**
+ * s in the settings, and /appsettings-export: every setting of an app or slot to a JSON file, in the portal's
+ * Advanced edit format (settingsfile.js), after saying that the values go in it as they are.
+ */
+export async function exportSettings(ctx, which, file) {
+  const target = need(ctx, typeof which === 'object' ? which : targetNamed(ctx, which));
+  if (!target) return;
+  const settings = await ctx.settingsOf(target).catch((e) => (ctx.note(e.message, 'error'), null));
+  if (!settings) return;
+  const name = file?.trim() || (await ctx.askText({ title: `Save ${label(target)}'s ${Object.keys(settings).length} settings to`, detail: `A JSON file, relative to ${ctx.cwd()}; esc cancels.`, value: settingsFileName(label(target)) }));
+  if (!name?.trim()) return;
+  const path = resolve(ctx.cwd(), name.trim());
+  const secrets = Object.keys(settings).filter((n) => looksSecret(n, settings[n])).length;
+  const ok = await ctx.confirm({
+    title: `Save ${label(target)}'s settings to ${path}?`,
+    detail: `${existsSync(path) ? 'It replaces the file there. ' : ''}Every value goes in it as it is${secrets ? `, ${secrets} that look secret among them` : ''}: keep it out of git, and delete it once it has done its job.`,
+    danger: true,
+    options: YES_NO('Yes, save them'),
+  });
+  if (!ok) return;
+  try {
+    await writeFile(path, settingsJson(settings));
+    ctx.note(`Saved ${Object.keys(settings).length} settings of ${label(target)} to ${path}: l in another app's settings (or /appsettings-import) loads them`, 'ok');
+    return path;
+  } catch (err) {
+    ctx.note(`Couldn't write ${path}: ${err.message}`, 'error');
+  }
+}
+
+/**
+ * l in the settings, and /appsettings-import: the settings in a JSON file (the portal's list, a plain object or an
+ * appsettings.json) into an app or slot, added to what it has: new ones added, different ones changed, its others kept.
+ */
+export async function importSettings(ctx, which, file, redraw = () => {}) {
+  const target = need(ctx, typeof which === 'object' ? which : targetNamed(ctx, which));
+  if (!target) return;
+  const name = file?.trim() || (await ctx.askText({ title: `Load settings into ${label(target)} from`, detail: `A JSON file, relative to ${ctx.cwd()}: the portal's Advanced edit list, { "name": "value" }, or an appsettings.json; esc cancels.` }));
+  if (!name?.trim()) return;
+  const path = resolve(ctx.cwd(), name.trim());
+  let text;
+  try {
+    text = await readFile(path, 'utf8');
+  } catch (err) {
+    return ctx.note(`Couldn't read ${path}: ${err.code === 'ENOENT' ? 'no such file' : err.message}`, 'error');
+  }
+  const read = readSettingsFile(text);
+  if (read.error) return ctx.note(`${path}: ${read.error}`, 'error');
+  const current = await ctx.settingsOf(target).catch((e) => (ctx.note(e.message, 'error'), null));
+  if (!current) return;
+  const next = mergeSettings(current, read.settings);
+  if (!settingsDiff(current, next).length) return ctx.note(`${label(target)} already has every setting in ${path}, the same.`, 'ok');
+  return saveSettings(ctx, target, current, next, redraw);
+}
+
+/**
+ * c in the settings, and /appsettings-copy: every setting of an app or slot into another (any web or function app or
+ * slot in the subscription, picked from a list), added to what that one has, as importSettings does.
+ */
+export async function copySettings(ctx, which, to) {
+  const source = need(ctx, typeof which === 'object' ? which : targetNamed(ctx, which));
+  if (!source) return;
+  const others = Object.values(ctx.targets()).filter((t) => !t.type && t.id !== source.id);
+  const dest = typeof to === 'object' && to ? to : to?.trim() ? targetNamed(ctx, to) : null;
+  if (to?.trim?.() && !dest) return ctx.note(`No app or slot called ${to.trim()}.`, 'error');
+  if (!dest) {
+    if (!others.length) return ctx.note('There is no other app or slot to copy them to.', 'error');
+    return ctx.showPicker({
+      title: `Copy ${label(source)}'s settings to`,
+      hint: 'what it has stays; new ones are added and different ones changed',
+      items: others.sort((a, b) => label(a).localeCompare(label(b))).map((t) => ({ t, segments: [{ text: label(t), strong: true }, { text: `  ${t.resourceGroup ?? ''}`, color: theme.dim }] })),
+      onPick: (it) => (ctx.closeOverlay(), copySettings(ctx, source, it.t)),
+    });
+  }
+  if (dest.id === source.id) return ctx.note("That's the same app: pick another to copy its settings to.", 'error');
+  const [from, current] = await Promise.all([ctx.settingsOf(source), ctx.settingsOf(dest)]).catch((e) => (ctx.note(e.message, 'error'), [null, null]));
+  if (!from || !current) return;
+  const next = mergeSettings(current, from);
+  if (!settingsDiff(current, next).length) return ctx.note(`${label(dest)} already has every setting of ${label(source)}, the same.`, 'ok');
+  return saveSettings(ctx, dest, current, next, () => {});
 }
 
 /** Saves `next` over `before` once you've seen what changes; Azure restarts the app to take them. */

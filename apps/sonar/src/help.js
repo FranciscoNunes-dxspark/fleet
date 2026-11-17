@@ -32,7 +32,7 @@ export const HELP = [
     about: "the subscription's web and function apps (ƒ) by resource group (with what each group has cost this month), their slots under them, and its container apps, SQL servers (databases under them), storage accounts, Service Bus namespaces, Cosmos DB accounts and Log Analytics workspaces; beside them the one under the cursor, with its cost this month and its metrics over the time span (CPU, memory, 5xx, response time)",
     views: ['resources'],
     rows: [
-      ['↵ / a', 'Its settings: v shows a hidden value (V all), e edits, n adds, x removes, d compares with another slot, y copies; a Key Vault reference shows ✓, or ✗ and why it didn\'t resolve'],
+      ['↵ / a', 'Its settings: v shows a hidden value (V all), e edits, n adds, x removes, d compares with another slot, y copies, s saves them all to a JSON file, l loads one, c copies them all to another app or slot; a Key Vault reference shows ✓, or ✗ and why it didn\'t resolve'],
       '⚠ beside an app or slot: one of its Key Vault references didn\'t resolve (its details say which and why). → 10% beside a slot: its share of the app\'s traffic (/route).',
       ['alt+r', 'Restart it'],
       ['alt+s', 'Stop it, or start it if it is stopped'],
