@@ -50,6 +50,8 @@ test('the ARM client: lists across pages, slots, settings, changes with the righ
     [`GET ${web.id}/slots`]: { value: [{ ...site('web/staging', 'rg-prod'), id: `${web.id}/slots/staging` }] },
     [`POST ${web.id}/config/appsettings/list`]: { properties: { A: '1' } },
     [`PUT ${web.id}/config/appsettings`]: {},
+    [`POST ${web.id}/config/connectionstrings/list`]: { properties: { Db: { value: 'Server=x', type: 'SQLAzure' }, Bare: { value: 'y' } } },
+    [`PUT ${web.id}/config/connectionstrings`]: {},
     [`POST ${web.id}/restart`]: {},
     [`POST ${web.id}/slots/staging/slotsswap`]: {},
     'GET /subscriptions/s1/providers/Microsoft.Insights/components': { value: [{ id: '/subscriptions/s1/resourceGroups/rg/providers/microsoft.insights/components/ai', name: 'ai', properties: { AppId: 'app-1', InstrumentationKey: 'K1' } }] },
@@ -67,6 +69,9 @@ test('the ARM client: lists across pages, slots, settings, changes with the righ
   assert.deepEqual(await azure.settings(apps[1]), { A: '1' });
   await azure.saveSettings(apps[1], { A: '2' });
   assert.deepEqual(calls.at(-1).body, { properties: { A: '2' } });
+  assert.deepEqual(await azure.connectionStringEntries(apps[1]), { Db: { value: 'Server=x', type: 'SQLAzure' }, Bare: { value: 'y', type: 'Custom' } });
+  await azure.saveConnectionStrings(apps[1], { Db: { value: 'Server=z', type: 'SQLAzure' } });
+  assert.deepEqual([calls.at(-1).init.method, calls.at(-1).body], ['PUT', { properties: { Db: { value: 'Server=z', type: 'SQLAzure' } } }]);
   await azure.restart(apps[1]);
   await azure.swap(staging);
   assert.deepEqual(calls.at(-1).body, { targetSlot: 'production', preserveVnet: true });

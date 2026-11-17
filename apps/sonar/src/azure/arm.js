@@ -698,6 +698,15 @@ export function createAzure({ fetch = globalThis.fetch, token }) {
       const r = await arm(`${target.id}/config/connectionstrings/list?api-version=${WEB}`, { ...opts, method: 'POST', what: `Reading ${label(target)}'s connection strings` });
       return Object.fromEntries(Object.entries(r?.properties ?? {}).map(([k, v]) => [k, v?.value ?? '']));
     },
+    /** Its connection strings with their types, { name: { value, type } } (SQLAzure, Custom…): what saving them takes. */
+    async connectionStringEntries(target, opts) {
+      const r = await arm(`${target.id}/config/connectionstrings/list?api-version=${WEB}`, { ...opts, method: 'POST', what: `Reading ${label(target)}'s connection strings` });
+      return Object.fromEntries(Object.entries(r?.properties ?? {}).map(([k, v]) => [k, { value: v?.value ?? '', type: v?.type ?? 'Custom' }]));
+    },
+    // ARM replaces the whole set, as for settings: what isn't in `strings` is removed.
+    async saveConnectionStrings(target, strings, opts) {
+      await arm(`${target.id}/config/connectionstrings?api-version=${WEB}`, { ...opts, method: 'PUT', body: { properties: strings }, what: `Saving ${label(target)}'s connection strings` });
+    },
     /** This machine's public address, as the internet sees it. */
     async publicIp({ signal } = {}) {
       const res = await fetch(IPIFY, { method: 'GET', signal });

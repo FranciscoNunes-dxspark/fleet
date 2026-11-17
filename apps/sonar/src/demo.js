@@ -770,6 +770,18 @@ export function demoAzure({ now = Date.now(), delay = 0 } = {}) {
       await wait(signal);
       return { ...site(target).connectionStrings };
     },
+    async connectionStringEntries(target, { signal } = {}) {
+      await wait(signal);
+      const s = site(target);
+      return Object.fromEntries(Object.entries(s.connectionStrings).map(([name, value]) => [name, { value, type: s.connectionStringTypes?.[name] ?? (/database\.windows\.net/i.test(value) ? 'SQLAzure' : 'Custom') }]));
+    },
+    async saveConnectionStrings(target, strings, { signal } = {}) {
+      await wait(signal);
+      const s = site(target);
+      s.connectionStrings = Object.fromEntries(Object.entries(strings).map(([name, e]) => [name, e.value]));
+      s.connectionStringTypes = Object.fromEntries(Object.entries(strings).map(([name, e]) => [name, e.type]));
+      logged(target, 'config/write');
+    },
     async logWorkspaces(sub, { signal } = {}) {
       await wait(signal);
       return state.workspaces.filter((w) => w.sub === sub).map(({ sub: _, ...w }) => ({ ...w }));

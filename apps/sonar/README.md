@@ -96,6 +96,28 @@ says what it changes before saving, and Azure restarts the app to take it. `d` c
 with another slot of the same app, which is where the difference between staging and production
 usually hides.
 
+To move settings from one app to another, `c` in the settings (or `/appsettings-copy [app]`) copies all
+of them, the application settings and the connection strings, into another app or slot in the
+subscription, picked from a list. `s` (`/appsettings-export [file]`) saves them to a JSON file instead,
+and `l` (`/appsettings-import [file]`) loads one into the app you're on, also in another subscription.
+The file is `{ "appSettings": [...], "connectionStrings": [...] }`, each list in the portal's Advanced
+edit format for its own pane (`[{ "name", "value", "slotSetting" }]`, and `"type"` too for a connection
+string: SQLAzure, SQLServer, MySql, PostgreSQL, Custom…), so either list pastes into the portal and back.
+Loading also takes either list alone (one whose items have a `type` is connection strings), a plain
+`{ "name": "value" }` object, or an appsettings.json: its `ConnectionStrings` section becomes connection
+strings (of type Custom), and the rest's nesting App Service's `__` (`Logging:LogLevel:Default` is
+`Logging__LogLevel__Default`).
+
+Copying and loading add to what the app has: new settings and connection strings are added and different
+ones changed (a connection string's type counts), and the app's others stay. Different ones include
+values that are meant to differ, such as `ASPNETCORE_ENVIRONMENT` or a connection string to another
+database, so read the list of changes before you say yes; to copy only some, save to a file, take out
+what shouldn't move, and load that. As with any change, Sonar first says what it adds and changes, asks
+(the app's name for production), and Azure restarts the app to take them. Saving asks first too, since
+the file holds every value as it is, secrets and connection strings included: keep it out of git. Key
+Vault references are copied as references, so the app they go to needs its own access to the vault.
+Which settings stick to a slot isn't carried over.
+
 ### Functions
 
 `f` on a function app (or `/functions [app]`) lists its functions: what triggers each (HTTP and its
@@ -373,7 +395,7 @@ While Fleet records a runbook (`ctrl+b R`), each slash command Sonar runs from i
 
 | In Resources | |
 | --- | --- |
-| `↵` / `a` | Its settings: `v` shows a hidden value (`alt+v` all), `e` edits, `n` adds, `x` removes, `d` compares with another slot, `y` copies |
+| `↵` / `a` | Its settings: `v` shows a hidden value (`alt+v` all), `e` edits, `n` adds, `x` removes, `d` compares with another slot, `y` copies; `s` saves them all, connection strings too, to a JSON file, `l` loads one, `c` copies them all to another app or slot (below) |
 | `alt+r` | Restart it |
 | `alt+s` | Stop it, or start it if it's stopped |
 | `alt+w` | Swap a slot into production (on an app, pick the slot) |
@@ -535,6 +557,9 @@ and Trawl.
 | `/find [text]` | Show only the apps whose name or resource group has the text in it |
 | `/appsettings [app]` | An app's or slot's settings |
 | `/compare [app]` | How a slot's settings differ from another slot's |
+| `/appsettings-export [file]` | Save the selected app's or slot's settings and connection strings to a JSON file (the portal's Advanced edit format) |
+| `/appsettings-import [file]` | Load settings and connection strings from a JSON file into the selected app or slot |
+| `/appsettings-copy [app]` | Copy the selected app's or slot's settings and connection strings into another |
 | `/restart [app]` | Restart an app or slot |
 | `/stop [app]` `/start [app]` | Stop or start one |
 | `/swap [app/slot]` | Swap a slot into production |
