@@ -945,6 +945,21 @@
    "desc": "An app's or slot's settings, to see, edit or compare"
   },
   {
+   "name": "appsettings-export",
+   "args": "[file]",
+   "desc": "Save the selected app's or slot's settings and connection strings to a JSON file (the portal's Advanced edit format)"
+  },
+  {
+   "name": "appsettings-import",
+   "args": "[file]",
+   "desc": "Load settings and connection strings from a JSON file into the selected app or slot: new ones added, different ones changed, its others kept"
+  },
+  {
+   "name": "appsettings-copy",
+   "args": "[app]",
+   "desc": "Copy the selected app's or slot's settings and connection strings into another: new ones added, different ones changed, its others kept"
+  },
+  {
    "name": "compare",
    "args": "[app]",
    "desc": "How a slot's settings differ from another slot's of the same app"
