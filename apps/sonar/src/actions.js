@@ -15,7 +15,7 @@ import { MARKER_KINDS, firstSeenAfter, firstSeenText, markerDetail, markerWords 
 import { deploymentsBefore, exceptionContext, framesInCheckout, framesOf, gitLogCommand, incidentFile, incidentMarkdown, parseGitLog, requestContext, requestOf, sqlTarget, writeupPrompt } from './incident.js';
 import { APP_NAMES, FAMILY, contextIn, copiedNote, describeContext, logActivity, notMine, projectAt, projectWiring, readActivity, repoRoot, takeLine, trawlLine } from '@fleet/kit/family.js';
 import { familyChoices } from './kin.js';
-import { mergeSettings, readSettingsFile, settingsFileName, settingsJson } from './settingsfile.js';
+import { configJson, mergeSettings, readSettingsFile, settingsFileName, stringsForDiff } from './settingsfile.js';
 import { referenceWords, resolved as refResolved } from './keyvault.js';
 import { functionLogQuery, functionRunsQuery, invocation, isDisabled, isHttp, prettyBody, triggerLabel, withDisabled } from './functions.js';
 import { parseWatch, watchEvery } from './watches.js';
@@ -213,29 +213,39 @@ export async function showSettings(ctx, which, { replace = false, index, shown =
   );
 }
 
+// An app's settings and connection strings together: what s, l and c carry.
+async function configOf(ctx, target) {
+  const [settings, strings] = await Promise.all([ctx.settingsOf(target), ctx.provider.connectionStringEntries(target)]);
+  return { settings, strings };
+}
+
+const count = (n, one) => `${n} ${one}${n === 1 ? '' : 's'}`;
+
 /**
- * s in the settings, and /appsettings-export: every setting of an app or slot to a JSON file, in the portal's
- * Advanced edit format (settingsfile.js), after saying that the values go in it as they are.
+ * s in the settings, and /appsettings-export: every setting and connection string of an app or slot to a JSON file,
+ * in the portal's Advanced edit format (settingsfile.js), after saying that the values go in it as they are.
  */
 export async function exportSettings(ctx, which, file) {
   const target = need(ctx, typeof which === 'object' ? which : targetNamed(ctx, which));
   if (!target) return;
-  const settings = await ctx.settingsOf(target).catch((e) => (ctx.note(e.message, 'error'), null));
-  if (!settings) return;
-  const name = file?.trim() || (await ctx.askText({ title: `Save ${label(target)}'s ${Object.keys(settings).length} settings to`, detail: `A JSON file, relative to ${ctx.cwd()}; esc cancels.`, value: settingsFileName(label(target)) }));
+  const config = await configOf(ctx, target).catch((e) => (ctx.note(e.message, 'error'), null));
+  if (!config) return;
+  const { settings, strings } = config;
+  const what = `${count(Object.keys(settings).length, 'setting')} and ${count(Object.keys(strings).length, 'connection string')}`;
+  const name = file?.trim() || (await ctx.askText({ title: `Save ${label(target)}'s ${what} to`, detail: `A JSON file, relative to ${ctx.cwd()}; esc cancels.`, value: settingsFileName(label(target)) }));
   if (!name?.trim()) return;
   const path = resolve(ctx.cwd(), name.trim());
-  const secrets = Object.keys(settings).filter((n) => looksSecret(n, settings[n])).length;
+  const secrets = Object.keys(settings).filter((n) => looksSecret(n, settings[n])).length + Object.keys(strings).length;
   const ok = await ctx.confirm({
-    title: `Save ${label(target)}'s settings to ${path}?`,
-    detail: `${existsSync(path) ? 'It replaces the file there. ' : ''}Every value goes in it as it is${secrets ? `, ${secrets} that look secret among them` : ''}: keep it out of git, and delete it once it has done its job.`,
+    title: `Save ${label(target)}'s ${what} to ${path}?`,
+    detail: `${existsSync(path) ? 'It replaces the file there. ' : ''}Every value goes in it as it is${secrets ? `, ${secrets} that look secret among them (connection strings count)` : ''}: keep it out of git, and delete it once it has done its job.`,
     danger: true,
     options: YES_NO('Yes, save them'),
   });
   if (!ok) return;
   try {
-    await writeFile(path, settingsJson(settings));
-    ctx.note(`Saved ${Object.keys(settings).length} settings of ${label(target)} to ${path}: l in another app's settings (or /appsettings-import) loads them`, 'ok');
+    await writeFile(path, configJson(config));
+    ctx.note(`Saved ${what} of ${label(target)} to ${path}: l in another app's settings (or /appsettings-import) loads them`, 'ok');
     return path;
   } catch (err) {
     ctx.note(`Couldn't write ${path}: ${err.message}`, 'error');
@@ -243,13 +253,14 @@ export async function exportSettings(ctx, which, file) {
 }
 
 /**
- * l in the settings, and /appsettings-import: the settings in a JSON file (the portal's list, a plain object or an
- * appsettings.json) into an app or slot, added to what it has: new ones added, different ones changed, its others kept.
+ * l in the settings, and /appsettings-import: the settings and connection strings in a JSON file (Sonar's, either of
+ * the portal's lists, a plain object or an appsettings.json) into an app or slot, added to what it has: new ones
+ * added, different ones changed, its others kept.
  */
 export async function importSettings(ctx, which, file, redraw = () => {}) {
   const target = need(ctx, typeof which === 'object' ? which : targetNamed(ctx, which));
   if (!target) return;
-  const name = file?.trim() || (await ctx.askText({ title: `Load settings into ${label(target)} from`, detail: `A JSON file, relative to ${ctx.cwd()}: the portal's Advanced edit list, { "name": "value" }, or an appsettings.json; esc cancels.` }));
+  const name = file?.trim() || (await ctx.askText({ title: `Load settings into ${label(target)} from`, detail: `A JSON file, relative to ${ctx.cwd()}: one Sonar saved, the portal's Advanced edit list, { "name": "value" }, or an appsettings.json; esc cancels.` }));
   if (!name?.trim()) return;
   const path = resolve(ctx.cwd(), name.trim());
   let text;
@@ -260,16 +271,15 @@ export async function importSettings(ctx, which, file, redraw = () => {}) {
   }
   const read = readSettingsFile(text);
   if (read.error) return ctx.note(`${path}: ${read.error}`, 'error');
-  const current = await ctx.settingsOf(target).catch((e) => (ctx.note(e.message, 'error'), null));
+  const current = await configOf(ctx, target).catch((e) => (ctx.note(e.message, 'error'), null));
   if (!current) return;
-  const next = mergeSettings(current, read.settings);
-  if (!settingsDiff(current, next).length) return ctx.note(`${label(target)} already has every setting in ${path}, the same.`, 'ok');
-  return saveSettings(ctx, target, current, next, redraw);
+  const next = { settings: mergeSettings(current.settings, read.settings), strings: mergeSettings(current.strings, read.strings) };
+  return saveConfig(ctx, target, current, next, redraw, `${label(target)} already has every setting and connection string in ${path}, the same.`);
 }
 
 /**
- * c in the settings, and /appsettings-copy: every setting of an app or slot into another (any web or function app or
- * slot in the subscription, picked from a list), added to what that one has, as importSettings does.
+ * c in the settings, and /appsettings-copy: every setting and connection string of an app or slot into another (any
+ * web or function app or slot in the subscription, picked from a list), added to what that one has, as importSettings does.
  */
 export async function copySettings(ctx, which, to) {
   const source = need(ctx, typeof which === 'object' ? which : targetNamed(ctx, which));
@@ -281,17 +291,39 @@ export async function copySettings(ctx, which, to) {
     if (!others.length) return ctx.note('There is no other app or slot to copy them to.', 'error');
     return ctx.showPicker({
       title: `Copy ${label(source)}'s settings to`,
-      hint: 'what it has stays; new ones are added and different ones changed',
+      hint: 'settings and connection strings; what it has stays, new ones are added and different ones changed',
       items: others.sort((a, b) => label(a).localeCompare(label(b))).map((t) => ({ t, segments: [{ text: label(t), strong: true }, { text: `  ${t.resourceGroup ?? ''}`, color: theme.dim }] })),
       onPick: (it) => (ctx.closeOverlay(), copySettings(ctx, source, it.t)),
     });
   }
   if (dest.id === source.id) return ctx.note("That's the same app: pick another to copy its settings to.", 'error');
-  const [from, current] = await Promise.all([ctx.settingsOf(source), ctx.settingsOf(dest)]).catch((e) => (ctx.note(e.message, 'error'), [null, null]));
+  const [from, current] = await Promise.all([configOf(ctx, source), configOf(ctx, dest)]).catch((e) => (ctx.note(e.message, 'error'), [null, null]));
   if (!from || !current) return;
-  const next = mergeSettings(current, from);
-  if (!settingsDiff(current, next).length) return ctx.note(`${label(dest)} already has every setting of ${label(source)}, the same.`, 'ok');
-  return saveSettings(ctx, dest, current, next, () => {});
+  const next = { settings: mergeSettings(current.settings, from.settings), strings: mergeSettings(current.strings, from.strings) };
+  return saveConfig(ctx, dest, current, next, () => {}, `${label(dest)} already has every setting and connection string of ${label(source)}, the same.`);
+}
+
+/**
+ * Saves settings and connection strings (`next`, { settings, strings }) over `before` once you've seen what changes in
+ * each; only the ones that change are written, and Azure restarts the app to take them. `same` is said when nothing does.
+ */
+async function saveConfig(ctx, target, before, next, redraw, same) {
+  const settingsChange = settingsDiff(before.settings, next.settings);
+  const stringsChange = settingsDiff(stringsForDiff(before.strings), stringsForDiff(next.strings));
+  if (!settingsChange.length && !stringsChange.length) return ctx.note(same, 'ok');
+  const words = (d, what) => `${d.change === 'only-a' ? 'remove' : d.change === 'only-b' ? 'add' : 'change'} ${what}${d.name}`;
+  const said = [...settingsChange.map((d) => words(d, '')), ...stringsChange.map((d) => words(d, 'connection string '))].join(', ');
+  const ok = await confirmChange(ctx, target, { title: `Save ${label(target)}'s settings: ${said}?`, detail: 'Azure restarts the app to take them.', yes: 'Yes, save them' });
+  if (!ok) return;
+  const done = await ctx.task(`Save ${label(target)}'s settings: ${said}`, async (signal) => {
+    if (settingsChange.length) await ctx.provider.saveSettings(target, next.settings, { signal });
+    if (stringsChange.length) await ctx.provider.saveConnectionStrings(target, next.strings, { signal });
+    ctx.forgetSettings(target);
+    return { stdout: 'Saved; the app restarts to take them' };
+  }, { label: 'Saving' });
+  activity(ctx, done, `saved ${label(target)}'s settings: ${said}`, 'settings');
+  if (done.ok) redraw();
+  return done;
 }
 
 /** Saves `next` over `before` once you've seen what changes; Azure restarts the app to take them. */
