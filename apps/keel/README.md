@@ -621,7 +621,7 @@ test/            node:test tests for the domain logic and the terminal app
 
 ## Limits
 
-- The changed-files list has no line counts (+/−) because the Azure DevOps REST API doesn't provide them. Images in PR text load only from your own organization. External images show as a placeholder, so no tracking pixels are fetched.
+- The changed-files list has no line counts (+/−) because the Azure DevOps REST API doesn't provide them. Images in pull requests, work items and comments load only from your own organization, or from the text itself: a screenshot pasted in as a base64 `data:` image (PNG, JPEG, GIF, WebP, BMP, AVIF or an icon) shows as it is. External images, and SVGs written into the text, show as a placeholder, so no tracking pixels are fetched.
 
 - Group reviewers (for example "[Project]\Team") are shown, but a PR only counts as "waiting on your review" when you are a direct reviewer.
 - Work item queries return up to 1,000 open items per project.

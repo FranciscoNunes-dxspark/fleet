@@ -4,6 +4,7 @@ import { stagesOf } from '../domain/pipelines.js';
 import { demoFile } from './files.js';
 import { DEMO_FILES } from './advisories.js';
 import { demoSecuritySettings } from './security.js';
+import { PASTED_SCREENSHOT } from './screenshot.js';
 
 // Demo provider: a deterministic, in-memory Azure DevOps organization.
 // It implements exactly the same methods and return shapes as
@@ -172,7 +173,10 @@ function addWorkItem(p, { type, title, stateIdx, sprint, assignedTo, priority, s
     activatedAt: stateCategory === 'Proposed' ? null : iso(stateCategory === 'Completed' ? stateChanged - (1 + (id % 6)) * D : stateChanged),
     closedAt: stateCategory === 'Completed' ? iso(stateChanged) : null,
     webUrl: `${ORG}/${p.name}/_workitems/edit/${id}`,
-    _description: `${title}.\n\nAs a customer I want this to work reliably so that I can complete my task without contacting support.`,
+    // Bugs carry a screenshot pasted into their text, as people paste them into real ones.
+    _description: type === 'Bug'
+      ? `${title}.\n\nThis is what the customer saw:\n\n![Screenshot](${PASTED_SCREENSHOT})`
+      : `${title}.\n\nAs a customer I want this to work reliably so that I can complete my task without contacting support.`,
     _acceptance: '- Happy path covered by **automated tests**\n- Telemetry added\n- Docs updated',
     _comments: rand() < 0.5 ? [{ author: pick(DEVS), text: 'Picked this up, will update by EOD.', createdAt: iso(stateChanged + H) }] : [],
     _prs: [],
