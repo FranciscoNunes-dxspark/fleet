@@ -240,7 +240,26 @@ export default function PipelineDetail({ target }) {
  */
 function ScheduleRunForm({ projectId, definitionId, repoId, branch: home, now, onCancel, onSchedule }) {
   const { data: branches } = useApi(repoId ? `/repos/${encodeURIComponent(projectId)}/${encodeURIComponent(repoId)}/branches` : null);
-  const { data: stages } = useApi(now && definitionId ? `/pipelines/${encodeURIComponent(projectId)}/${encodeURIComponent(definitionId)}/stages` : null);
+  const [branch, setBranch] = useState(home || '');
+  // Parameters are read from the branch's YAML once the branch is settled (on leaving the field), not on every key.
+  const [paramsOn, setParamsOn] = useState(home || '');
+  const { data: params } = useApi(now && definitionId ? `/pipelines/${encodeURIComponent(projectId)}/${encodeURIComponent(definitionId)}/parameters${paramsOn ? `?branch=${encodeURIComponent(paramsOn)}` : ''}` : null);
+  const [values, setValues] = useState({});
+  const valueOf = (p) => values[p.name] ?? p.default ?? '';
+  const setValue = (name, v) => setValues((prev) => ({ ...prev, [name]: v }));
+  const missing = (params || []).some((p) => p.required && p.default == null && !String(valueOf(p)).trim());
+  // Only what was changed goes with the run: the rest the pipeline sets itself.
+  const changed = (params || []).filter((p) => values[p.name] !== undefined && values[p.name] !== (p.default ?? ''));
+  const chosen = JSON.stringify(Object.fromEntries(changed.map((p) => [p.name, values[p.name]])));
+  // The stages are the run preview's for that branch and those parameters (a parameter can add or drop a
+  // stage), asked again a moment after the last change rather than on every key typed in a field.
+  const [stagesFor, setStagesFor] = useState(chosen);
+  useEffect(() => {
+    const timer = setTimeout(() => setStagesFor(chosen), 400);
+    return () => clearTimeout(timer);
+  }, [chosen]);
+  const stagesQuery = [paramsOn ? `branch=${encodeURIComponent(paramsOn)}` : '', stagesFor !== '{}' ? `parameters=${encodeURIComponent(stagesFor)}` : ''].filter(Boolean).join('&');
+  const { data: stages } = useApi(now && definitionId ? `/pipelines/${encodeURIComponent(projectId)}/${encodeURIComponent(definitionId)}/stages${stagesQuery ? `?${stagesQuery}` : ''}` : null);
   const [skipped, setSkipped] = useState(() => new Set());
   const skipping = (stages || []).filter((s) => skipped.has(s.id)).map((s) => s.id);
   const noneLeft = !!stages?.length && skipping.length >= stages.length;
@@ -250,14 +269,6 @@ function ScheduleRunForm({ projectId, definitionId, repoId, branch: home, now, o
     else next.add(id);
     return next;
   });
-  const [branch, setBranch] = useState(home || '');
-  // Parameters are read from the branch's YAML once the branch is settled (on leaving the field), not on every key.
-  const [paramsOn, setParamsOn] = useState(home || '');
-  const { data: params } = useApi(now && definitionId ? `/pipelines/${encodeURIComponent(projectId)}/${encodeURIComponent(definitionId)}/parameters${paramsOn ? `?branch=${encodeURIComponent(paramsOn)}` : ''}` : null);
-  const [values, setValues] = useState({});
-  const valueOf = (p) => values[p.name] ?? p.default ?? '';
-  const setValue = (name, v) => setValues((prev) => ({ ...prev, [name]: v }));
-  const missing = (params || []).some((p) => p.required && p.default == null && !String(valueOf(p)).trim());
   const [at, setAt] = useState(() => defaultAt());
   const [busy, setBusy] = useState(false);
   const ref = useRef(null);
@@ -269,8 +280,7 @@ function ScheduleRunForm({ projectId, definitionId, repoId, branch: home, now, o
   const submit = async (e) => {
     e.preventDefault();
     setBusy(true);
-    // Only what was changed goes with the run: the rest the pipeline sets itself.
-    const parameters = Object.fromEntries((params || []).filter((p) => values[p.name] !== undefined && values[p.name] !== (p.default ?? '')).map((p) => [p.name, values[p.name]]));
+    const parameters = JSON.parse(chosen);
     await onSchedule({ branch: branch.trim(), at: now ? undefined : new Date(at).toISOString(), skipStages: now ? skipping : [], parameters: now ? parameters : {} });
     setBusy(false);
   };

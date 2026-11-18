@@ -145,7 +145,10 @@ export function remoteService({ call }) {
     pipelineRuns: (projectId, definitionId) => call(`/pipelines/${e(projectId)}/${e(definitionId)}/runs`),
     commitUsage: (hash, { repo } = {}) => call(`/commits/${e(hash)}/carriers${repo ? `?repo=${e(repo)}` : ''}`),
     runDetails: (projectId, buildId) => call(`/builds/${e(projectId)}/${e(buildId)}`),
-    pipelineStages: (projectId, definitionId) => call(`/pipelines/${e(projectId)}/${e(definitionId)}/stages`),
+    pipelineStages: (projectId, definitionId, { branch, parameters } = {}) => {
+      const q = [branch ? `branch=${e(branch)}` : '', parameters && Object.keys(parameters).length ? `parameters=${e(JSON.stringify(parameters))}` : ''].filter(Boolean).join('&');
+      return call(`/pipelines/${e(projectId)}/${e(definitionId)}/stages${q ? `?${q}` : ''}`);
+    },
     pipelineParameters: (projectId, definitionId, branch) => call(`/pipelines/${e(projectId)}/${e(definitionId)}/parameters${branch ? `?branch=${e(branch)}` : ''}`),
     queueBuild: (projectId, definitionId, branch, { skipStages, parameters } = {}) => call('/pipelines/queue', { method: 'POST', body: { projectId, definitionId, branch, skipStages, parameters } }),
     cancelBuild: (projectId, buildId) => call('/pipelines/cancel', { method: 'POST', body: { projectId, buildId } }),

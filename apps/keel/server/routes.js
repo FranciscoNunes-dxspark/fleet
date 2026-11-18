@@ -38,6 +38,18 @@ export function apiRouter({ channels = null, push = null, schedules = null } = {
     if (!Number.isInteger(n) || n <= 0) throw Object.assign(new Error('Invalid id'), { status: 400 });
     return n;
   };
+  // A query parameter holding a JSON object of text values (a run's parameters); anything else is none.
+  const jsonObject = (v) => {
+    if (typeof v !== 'string' || !v) return undefined;
+    try {
+      const o = JSON.parse(v);
+      return o && typeof o === 'object' && !Array.isArray(o)
+        ? Object.fromEntries(Object.entries(o).filter(([, x]) => ['string', 'number', 'boolean'].includes(typeof x)).map(([k, x]) => [k, String(x)]))
+        : undefined;
+    } catch {
+      return undefined;
+    }
+  };
 
   r.get('/meta', async (req, res) => {
     const role = req.ctx.role || 'admin';
@@ -220,7 +232,11 @@ export function apiRouter({ channels = null, push = null, schedules = null } = {
   // Each project's pace for the epics' forecasts, apart from /epics so the tree never waits for it.
   r.get('/epics/pace', async (req, res) => res.json(await req.ctx.service.forecastPace(90)));
   r.get('/pipelines', async (req, res) => res.json(await req.ctx.service.pipelines()));
-  r.get('/pipelines/:projectId/:definitionId/stages', async (req, res) => res.json(await req.ctx.service.pipelineStages(req.params.projectId, req.params.definitionId)));
+  // The stages a run would have: ?branch= and ?parameters= (JSON, { name: value }) change them, as the run preview says.
+  r.get('/pipelines/:projectId/:definitionId/stages', async (req, res) => res.json(await req.ctx.service.pipelineStages(req.params.projectId, req.params.definitionId, {
+    branch: req.query.branch ? String(req.query.branch) : undefined,
+    parameters: jsonObject(req.query.parameters),
+  })));
   r.get('/pipelines/:projectId/:definitionId/parameters', async (req, res) => res.json(await req.ctx.service.pipelineParameters(req.params.projectId, req.params.definitionId, req.query.branch ? String(req.query.branch) : undefined)));
   r.get('/pipelines/:projectId/:definitionId/runs', async (req, res) => res.json(await req.ctx.service.pipelineRuns(req.params.projectId, req.params.definitionId)));
   r.get('/commits/:hash/carriers', async (req, res) => res.json(await req.ctx.service.commitUsage(req.params.hash, { repo: req.query.repo ? String(req.query.repo) : undefined })));
