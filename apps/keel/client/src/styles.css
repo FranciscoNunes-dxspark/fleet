@@ -842,6 +842,9 @@ button.tree-caret:hover { background: var(--surface-2); color: var(--ink); }
 .complete-form .run-stages { border: 0; padding: 0; margin: 0 0 10px; }
 .complete-form .run-stages legend { padding: 0; margin-bottom: 4px; }
 .complete-form .run-stages .check { display: flex; align-items: center; gap: 6px; color: var(--ink); }
+.complete-form .run-params { border: 0; padding: 0; margin: 0 0 10px; display: grid; gap: 10px; }
+.complete-form .run-params legend { padding: 0; margin-bottom: 4px; }
+.complete-form .run-params .check { display: flex; align-items: center; gap: 6px; color: var(--ink); }
 .complete-actions { display: flex; gap: 8px; margin-top: 12px; }
 
 /* ------------------------------------------------------ releases + approvals */

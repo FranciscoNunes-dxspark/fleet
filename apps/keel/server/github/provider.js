@@ -3,6 +3,7 @@
 // requests and Actions, with the same normalized shapes as azdo/provider.js; GitHub has no
 // work items, boards, sprints or classic releases here, so those answer empty.
 import { createClient, seg } from './client.js';
+import { pipelineParameters } from '../domain/parameters.js';
 import {
   person, normalizePR, withEmails, policiesOf, threadsOf, fileOf, normalizeCommit, normalizeRun, normalizeWorkflow, timelineOf, logTail, approvalsOf, releasesOf,
 } from './normalize.js';
@@ -562,13 +563,27 @@ export function createGithubProvider({ org, token, client } = {}) {
       return [];
     },
 
-    /** Starts a workflow on a branch (its default when none is given). It needs a workflow_dispatch trigger. */
-    async queueBuild(_projectId, definitionId, branch, { skipStages = [] } = {}) {
+    /** A workflow's workflow_dispatch inputs, with every option a choice offers (domain/parameters.js), from its file on the branch. */
+    async listPipelineParameters(_projectId, definitionId, branch) {
+      const repo = await workflowRepo(definitionId);
+      const w = await api(`${repoPath(repo)}/actions/workflows/${Number(definitionId)}`);
+      if (!w?.path) return [];
+      const r = await repoByName(repo);
+      const text = await apiText(`${repoPath(repo)}/contents/${String(w.path).split('/').map(seg).join('/')}`, { query: { ref: branch || r?.default_branch || 'main' } })
+        .catch((e) => (e.status === 404 ? '' : Promise.reject(e)));
+      return pipelineParameters(text);
+    },
+
+    /** Starts a workflow on a branch (its default when none is given), with its inputs. It needs a workflow_dispatch trigger. */
+    async queueBuild(_projectId, definitionId, branch, { skipStages = [], parameters = {} } = {}) {
       if (skipStages.length) throw err("GitHub can't skip a workflow's jobs in a run started by hand.");
       const repo = await workflowRepo(definitionId);
       const r = await repoByName(repo);
       try {
-        await api(`${repoPath(repo)}/actions/workflows/${Number(definitionId)}/dispatches`, { method: 'POST', body: { ref: branch || r?.default_branch || 'main' } });
+        await api(`${repoPath(repo)}/actions/workflows/${Number(definitionId)}/dispatches`, {
+          method: 'POST',
+          body: { ref: branch || r?.default_branch || 'main', ...(Object.keys(parameters).length ? { inputs: parameters } : {}) },
+        });
       } catch (e) {
         if (e.status === 422 && /workflow_dispatch/i.test(e.message)) throw err('This workflow can\'t be started by hand: add "workflow_dispatch" to its "on:" triggers.');
         throw e;

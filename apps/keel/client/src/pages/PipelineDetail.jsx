@@ -4,11 +4,11 @@ import { api } from '../api.js';
 import { useApi, useApp } from '../context.js';
 import { age, dateTime, dateTimeZone, defaultAt, localZone, pct } from '../format.js';
 import { t, tj, tx } from '../i18n.js';
-import { Checkbox, Chip, Confirm, ErrorBox, ExternalLink, Loading } from '../ui.jsx';
+import { Checkbox, Chip, Confirm, ErrorBox, ExternalLink, Loading, Select } from '../ui.jsx';
 import { useProjectLabel, useSourceName } from '../orgs.js';
 import { FlakyTests } from './Pipelines.jsx';
 import { RunTimesChart } from '../charts.jsx';
-import { Button, TextField } from '@radix-ui/themes';
+import { Button, RadioGroup, TextArea, TextField } from '@radix-ui/themes';
 
 // Pipeline details (drawer): the pipeline's latest runs, and for one run its
 // stages, jobs and steps, the failed steps' errors and last log lines, the
@@ -118,9 +118,9 @@ export default function PipelineDetail({ target }) {
     }
   };
 
-  const queueOn = async (on, skipStages = []) => {
+  const queueOn = async (on, skipStages = [], parameters = {}) => {
     try {
-      await api('/pipelines/queue', { method: 'POST', body: { projectId, definitionId: Number(definitionId), branch: on, ...(skipStages.length ? { skipStages } : {}) } });
+      await api('/pipelines/queue', { method: 'POST', body: { projectId, definitionId: Number(definitionId), branch: on, ...(skipStages.length ? { skipStages } : {}), ...(Object.keys(parameters).length ? { parameters } : {}) } });
       toast(skipStages.length ? t('Run queued on {branch}, skipping {n} stages', { branch: on, n: skipStages.length }) : t('Run queued on {branch}', { branch: on }));
       refresh();
       reload();
@@ -180,7 +180,7 @@ export default function PipelineDetail({ target }) {
         </section>
       )}
 
-      {runningOn && <ScheduleRunForm now projectId={projectId} definitionId={definitionId} repoId={p?.repoId} branch={branch} onCancel={() => setRunningOn(false)} onSchedule={async ({ branch: on, skipStages }) => { await queueOn(on, skipStages); setRunningOn(false); }} />}
+      {runningOn && <ScheduleRunForm now projectId={projectId} definitionId={definitionId} repoId={p?.repoId} branch={branch} onCancel={() => setRunningOn(false)} onSchedule={async ({ branch: on, skipStages, parameters }) => { await queueOn(on, skipStages, parameters); setRunningOn(false); }} />}
       {scheduling && <ScheduleRunForm projectId={projectId} repoId={p?.repoId} branch={branch} onCancel={() => setScheduling(false)} onSchedule={scheduleRun} />}
 
       <section className="detail-section">
@@ -235,7 +235,8 @@ export default function PipelineDetail({ target }) {
 
 /**
  * Run once at a set time: the branch (the pipeline's own by default) and when. Run now
- * (`now`) also offers the pipeline's stages, all ticked, to leave some out of the run.
+ * (`now`) also offers the pipeline's stages, all ticked, to leave some out of the run, and its
+ * parameters, as its YAML has them on that branch, each with every option it takes.
  */
 function ScheduleRunForm({ projectId, definitionId, repoId, branch: home, now, onCancel, onSchedule }) {
   const { data: branches } = useApi(repoId ? `/repos/${encodeURIComponent(projectId)}/${encodeURIComponent(repoId)}/branches` : null);
@@ -250,6 +251,13 @@ function ScheduleRunForm({ projectId, definitionId, repoId, branch: home, now, o
     return next;
   });
   const [branch, setBranch] = useState(home || '');
+  // Parameters are read from the branch's YAML once the branch is settled (on leaving the field), not on every key.
+  const [paramsOn, setParamsOn] = useState(home || '');
+  const { data: params } = useApi(now && definitionId ? `/pipelines/${encodeURIComponent(projectId)}/${encodeURIComponent(definitionId)}/parameters${paramsOn ? `?branch=${encodeURIComponent(paramsOn)}` : ''}` : null);
+  const [values, setValues] = useState({});
+  const valueOf = (p) => values[p.name] ?? p.default ?? '';
+  const setValue = (name, v) => setValues((prev) => ({ ...prev, [name]: v }));
+  const missing = (params || []).some((p) => p.required && p.default == null && !String(valueOf(p)).trim());
   const [at, setAt] = useState(() => defaultAt());
   const [busy, setBusy] = useState(false);
   const ref = useRef(null);
@@ -261,7 +269,9 @@ function ScheduleRunForm({ projectId, definitionId, repoId, branch: home, now, o
   const submit = async (e) => {
     e.preventDefault();
     setBusy(true);
-    await onSchedule({ branch: branch.trim(), at: now ? undefined : new Date(at).toISOString(), skipStages: now ? skipping : [] });
+    // Only what was changed goes with the run: the rest the pipeline sets itself.
+    const parameters = Object.fromEntries((params || []).filter((p) => values[p.name] !== undefined && values[p.name] !== (p.default ?? '')).map((p) => [p.name, values[p.name]]));
+    await onSchedule({ branch: branch.trim(), at: now ? undefined : new Date(at).toISOString(), skipStages: now ? skipping : [], parameters: now ? parameters : {} });
     setBusy(false);
   };
   return (
@@ -269,7 +279,7 @@ function ScheduleRunForm({ projectId, definitionId, repoId, branch: home, now, o
       <h3>{now ? t('Run on a branch') : t('Run at a set time')}</h3>
       <p className="muted small">{now ? t('Keel starts one run now, as you, on the branch you pick.') : t('Keel starts one run then, as you, on the branch you pick. For runs that repeat (every night, say), use a schedule in the pipeline itself.')}</p>
       <label className="field">{t('Branch')}
-        <TextField.Root className="mono" variant="surface" color="gray" list="schedule-run-branches" value={branch} onChange={(e) => setBranch(e.target.value)} spellCheck={false} required />
+        <TextField.Root className="mono" variant="surface" color="gray" list="schedule-run-branches" value={branch} onChange={(e) => setBranch(e.target.value)} onBlur={() => setParamsOn(branch.trim())} spellCheck={false} required />
         <datalist id="schedule-run-branches">{(branches || []).map((b) => <option key={b.name} value={b.name} />)}</datalist>
       </label>
       {now && stages?.length > 0 && (
@@ -281,15 +291,65 @@ function ScheduleRunForm({ projectId, definitionId, repoId, branch: home, now, o
           {noneLeft && <span className="text-warn small">{t('Pick at least one stage to run.')}</span>}
         </fieldset>
       )}
+      {now && params?.length > 0 && (
+        <fieldset className="field run-params">
+          <legend>{t('Parameters')}</legend>
+          {params.map((p) => <RunParameter key={p.name} p={p} value={valueOf(p)} onChange={(v) => setValue(p.name, v)} />)}
+        </fieldset>
+      )}
       {!now && <label className="field">{t('When')}
         <TextField.Root variant="surface" color="gray" type="datetime-local" value={at} onChange={(e) => setAt(e.target.value)} required aria-describedby="run-at-zone" />
         {localZone() && <span className="muted small" id="run-at-zone">{t('{zone} time', { zone: localZone() })}</span>}
       </label>}
       <div className="complete-actions">
-        <Button size="1" variant="solid" type="submit" disabled={busy || !branch.trim() || (!now && !at) || noneLeft}>{now ? (busy ? t('Starting…') : t('Run')) : busy ? t('Scheduling…') : t('Schedule run')}</Button>
+        <Button size="1" variant="solid" type="submit" disabled={busy || !branch.trim() || (!now && !at) || noneLeft || (now && missing)}>{now ? (busy ? t('Starting…') : t('Run')) : busy ? t('Scheduling…') : t('Schedule run')}</Button>
         <Button size="1" variant="ghost" color="gray" type="button" onClick={onCancel}>{t('Cancel')}</Button>
       </div>
     </form>
+  );
+}
+
+/**
+ * One parameter of a run: every option it takes in view (a list as radios, or a menu when it's
+ * long), a tick for true or false, else a field. Its name shows under its label when they differ.
+ */
+function RunParameter({ p, value, onChange }) {
+  const id = `run-param-${p.name}`;
+  const label = (
+    <span className="run-param-label">
+      {p.label}{p.label !== p.name && <code className="muted small"> {p.name}</code>}
+    </span>
+  );
+  if (p.type === 'boolean') {
+    return <label className="check"><Checkbox checked={value === 'true'} onChange={(e) => onChange(e.target.checked ? 'true' : 'false')} /> {label}</label>;
+  }
+  if (p.options.length > 8) {
+    return (
+      <label className="field">{label}
+        <Select value={value} onChange={(e) => onChange(e.target.value)} aria-label={p.label}>
+          {!p.options.includes(value) && <option value="">—</option>}
+          {p.options.map((o) => <option key={o} value={o}>{o === p.default ? t('{value} (default)', { value: o }) : o}</option>)}
+        </Select>
+      </label>
+    );
+  }
+  if (p.options.length) {
+    return (
+      <div className="field" role="group" aria-labelledby={id}>
+        <span id={id}>{label}</span>
+        <RadioGroup.Root size="1" value={value} onValueChange={onChange}>
+          {p.options.map((o) => <RadioGroup.Item key={o} value={o}>{o === p.default ? t('{value} (default)', { value: o }) : o}</RadioGroup.Item>)}
+        </RadioGroup.Root>
+      </div>
+    );
+  }
+  if (p.type === 'object') {
+    return <label className="field">{label}<TextArea className="mono" size="1" value={value} onChange={(e) => onChange(e.target.value)} spellCheck={false} /></label>;
+  }
+  return (
+    <label className="field">{label}
+      <TextField.Root variant="surface" color="gray" type={p.type === 'number' ? 'number' : 'text'} value={value} onChange={(e) => onChange(e.target.value)} required={p.required && p.default == null} spellCheck={false} />
+    </label>
   );
 }
 

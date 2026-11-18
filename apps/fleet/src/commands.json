@@ -2357,8 +2357,13 @@
   },
   {
    "name": "run",
-   "args": "[branch] [-stage …]",
-   "desc": "Run the pipeline (its own branch by default), leaving out each -stage"
+   "args": "[branch] [-stage …] [name=value …]",
+   "desc": "Run the pipeline (its own branch by default), leaving out each -stage, with its parameters set"
+  },
+  {
+   "name": "params",
+   "args": "[branch]",
+   "desc": "The pipeline's parameters, each with every option it takes (on its own branch by default)"
   },
   {
    "name": "logs",

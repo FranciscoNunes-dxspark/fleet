@@ -9,6 +9,7 @@ import { createMockProvider } from './mock/provider.js';
 import { DAY, HOUR, enrichPR, sameIdentity, emailOf } from './domain/prs.js';
 import { releaseHealth } from './domain/releases.js';
 import { currentStage, pipelineHealth, stagesToSkip, wasDeclined } from './domain/pipelines.js';
+import { parameterValues } from './domain/parameters.js';
 import { buildWorkload } from './domain/workload.js';
 import { buildAttention, isBlocked } from './domain/attention.js';
 import { buildInsights } from './domain/insights.js';
@@ -1986,9 +1987,31 @@ export function createService({
       return stages.length > 1 ? stages : [];
     },
 
-    async queueBuild(projectId, definitionId, branch, { skipStages } = {}) {
+    /**
+     * The parameters a manual run can set, with every option each takes, from the pipeline's YAML
+     * on the branch (its default branch when none is given). [] for a classic build, or a file
+     * Keel can't read.
+     */
+    async pipelineParameters(projectId, definitionId, branch) {
+      if (!(await tracked()).some((p) => p.id === projectId)) throw Object.assign(new Error('Unknown project'), { status: 400 });
+      const id = Number(definitionId);
+      const on = typeof branch === 'string' ? branch.trim() : '';
+      return cached(`builds:params:${projectId}:${id}:${on}`, () => (provider.listPipelineParameters
+        ? provider.listPipelineParameters(projectId, id, on || undefined).catch((err) => {
+          // A pipeline whose YAML can't be read still runs, with its defaults.
+          if (err.status && err.status < 500) return [];
+          throw err;
+        })
+        : []), 5 * MIN);
+    },
+
+    async queueBuild(projectId, definitionId, branch, { skipStages, parameters } = {}) {
       const skip = Array.isArray(skipStages) && skipStages.length ? stagesToSkip(await this.pipelineStages(projectId, definitionId), skipStages) : [];
-      const result = await provider.queueBuild(projectId, Number(definitionId), branch, skip.length ? { skipStages: skip } : undefined);
+      const values = parameters && typeof parameters === 'object' && Object.keys(parameters).length
+        ? parameterValues(await this.pipelineParameters(projectId, definitionId, branch), parameters)
+        : {};
+      const options = { ...(skip.length ? { skipStages: skip } : {}), ...(Object.keys(values).length ? { parameters: values } : {}) };
+      const result = await provider.queueBuild(projectId, Number(definitionId), branch, Object.keys(options).length ? options : undefined);
       cache.invalidate('builds');
       return result;
     },
