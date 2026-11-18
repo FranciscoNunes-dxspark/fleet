@@ -4,6 +4,7 @@ import { api } from '../api.js';
 import { useApi, useApp } from '../context.js';
 import { age, dateTime, dateTimeZone, pct } from '../format.js';
 import { Chip, Confirm, Empty, ErrorBox, ExternalLink, Loading, PageHeader, Toggle, pinInView } from '../ui.jsx';
+import { RunConfirm } from '../runparams.jsx';
 import { ApprovalsPanel, ReleasesTab } from './Releases.jsx';
 import { Trend } from './PipelineDetail.jsx';
 import { t, tj } from '../i18n.js';
@@ -141,10 +142,10 @@ function BuildsTab({ data }) {
     }
   };
 
-  const queue = async (p, rowEl) => {
+  const queue = async (p, rowEl, parameters = {}) => {
     pinInView(rowEl);
     try {
-      await api('/pipelines/queue', { method: 'POST', body: { projectId: p.projectId, definitionId: p.definition.id, branch: p.branch } });
+      await api('/pipelines/queue', { method: 'POST', body: { projectId: p.projectId, definitionId: p.definition.id, branch: p.branch, ...(Object.keys(parameters).length ? { parameters } : {}) } });
       toast(t('Queued {name} on {branch}', { name: p.definition.name, branch: p.branch }));
       refresh();
     } catch (e) {
@@ -236,7 +237,7 @@ function PipelineRow({ p, showFolder, onQueue, onCancel, scheduled = false, onCa
         <div className="chips">
           {run && <Chip tone={queued ? 'muted' : 'info'}>{t(queued ? 'Queued' : 'Running')}</Chip>}
           {p.scheduledRuns?.length > 0 && (
-            <Chip tone="info" title={p.scheduledRuns.map((s) => `${dateTimeZone(s.at)} · ${s.branch}`).join('\n')}>
+            <Chip tone="info" title={p.scheduledRuns.map((s) => [dateTimeZone(s.at), s.branch, ...Object.entries(s.parameters || {}).map(([k, v]) => `${k}=${v}`)].join(' · ')).join('\n')}>
               {t('Runs {when}', { when: dateTime(p.scheduledRuns[0].at) })}{p.scheduledRuns.length > 1 ? ` +${p.scheduledRuns.length - 1}` : ''}
             </Chip>
           )}
@@ -275,7 +276,7 @@ function PipelineRow({ p, showFolder, onQueue, onCancel, scheduled = false, onCa
       <td className="num muted">{p.medianDurationMin != null ? `${Math.round(p.medianDurationMin)}m` : '—'}<Trend trend={p.durationTrend} /></td>
       <td className="row-actions">
         {canRun && run && <Confirm text={t('Cancel {run}?', { run: run.buildNumber })} onConfirm={() => onCancel(run)} className="btn btn-small btn-ghost text-bad">{t('Cancel')}</Confirm>}
-        {canRun && <Confirm text={t('Run on {branch}?', { branch: p.branch })} onConfirm={() => onQueue(p, rowRef.current)} className="btn btn-small btn-ghost">{t('Run')}</Confirm>}
+        {canRun && <RunConfirm projectId={p.projectId} definitionId={p.definition.id} branch={p.branch} text={t('Run on {branch}?', { branch: p.branch })} onRun={(parameters) => onQueue(p, rowRef.current, parameters)} className="btn btn-small btn-ghost">{t('Run')}</RunConfirm>}
         <ExternalLink href={(run || p.lastRun)?.webUrl || p.webUrl}>{t('Open')}</ExternalLink>
       </td>
     </tr>

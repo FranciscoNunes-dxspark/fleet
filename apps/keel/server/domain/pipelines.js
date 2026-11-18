@@ -1,3 +1,4 @@
+import { parse } from 'yaml';
 import { median } from './prs.js';
 
 const AUTOMATIC = new Set(['individualCI', 'batchedCI', 'schedule', 'buildCompletion', 'resourceTrigger', 'triggered']);
@@ -108,6 +109,24 @@ export function stagesOf(timeline = []) {
     .filter((r) => r.type === 'Stage' && r.identifier && !r.identifier.startsWith('__default'))
     .sort((a, b) => a.order - b.order)
     .map((r) => ({ id: r.identifier, name: r.name || r.identifier }));
+}
+
+/**
+ * The stages a YAML pipeline would run, from its expanded YAML (Azure DevOps' run preview, with
+ * templates and conditions already applied): `id` its `stage:`, `name` its displayName, in order.
+ * A pipeline of jobs or steps only has none; so has text that isn't YAML.
+ */
+export function stagesOfYaml(text) {
+  let doc;
+  try {
+    doc = typeof text === 'string' && text.trim() ? parse(text, { uniqueKeys: false }) : null;
+  } catch {
+    return [];
+  }
+  const list = doc && typeof doc === 'object' && Array.isArray(doc.stages) ? doc.stages : [];
+  return list
+    .filter((s) => s && typeof s === 'object' && s.stage != null && String(s.stage))
+    .map((s) => ({ id: String(s.stage), name: s.displayName ? String(s.displayName) : String(s.stage) }));
 }
 
 /**

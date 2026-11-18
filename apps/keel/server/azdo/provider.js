@@ -5,7 +5,7 @@ import { marked } from 'marked';
 import { config } from '../config.js';
 import { createClient, seg } from './client.js';
 import { stageSummary } from '../domain/releases.js';
-import { stagesOf } from '../domain/pipelines.js';
+import { stagesOf, stagesOfYaml } from '../domain/pipelines.js';
 import { pipelineParameters } from '../domain/parameters.js';
 
 const EMPTY_GUID = '00000000-0000-0000-0000-000000000000';
@@ -159,6 +159,10 @@ export function createAzdoProvider({ orgUrl = config.orgUrl, pat = config.pat, t
     queuedAt: b.queueTime,
     startedAt: b.startTime || null,
     finishedAt: b.finishTime || null,
+    // The runtime parameters the run was queued with (Run again offers them again); none for most runs.
+    parameters: b.templateParameters && typeof b.templateParameters === 'object' && Object.keys(b.templateParameters).length
+      ? Object.fromEntries(Object.entries(b.templateParameters).map(([k, v]) => [k, typeof v === 'string' ? v : JSON.stringify(v)]))
+      : null,
     webUrl: b._links?.web?.href || `${org}/${seg(b.project?.name)}/_build/results?buildId=${b.id}`,
   });
   const rm = releaseHost(org);
@@ -1435,9 +1439,27 @@ export function createAzdoProvider({ orgUrl = config.orgUrl, pat = config.pat, t
       }
     },
 
-    /** A YAML pipeline's stages, as its latest run had them (Azure DevOps has no API that lists them without running the YAML). */
-    async listPipelineStages(projectId, definitionId) {
-      const d = await api(`${seg(projectId)}/_apis/build/builds`, { query: { definitions: definitionId, queryOrder: 'queueTimeDescending', $top: 1 } });
+    /**
+     * The stages a run of a YAML pipeline would have on a branch (its default when none is given)
+     * with these parameters: Azure DevOps expands the YAML without running it (the run preview), so
+     * templates, conditions and parameters are applied and stages since removed don't show. Where the
+     * preview fails (a classic build, an older server, YAML that doesn't compile), the stages of the
+     * latest run on that branch instead.
+     */
+    async listPipelineStages(projectId, definitionId, { branch, parameters = {} } = {}) {
+      const preview = await api(`${seg(projectId)}/_apis/pipelines/${Number(definitionId)}/preview`, {
+        method: 'POST',
+        apiVersion: '7.1-preview.1',
+        body: {
+          previewRun: true,
+          ...(Object.keys(parameters).length ? { templateParameters: parameters } : {}),
+          ...(branch ? { resources: { repositories: { self: { refName: `refs/heads/${branch}` } } } } : {}),
+        },
+      }).catch((err) => (err.status === 401 ? Promise.reject(err) : null));
+      if (typeof preview?.finalYaml === 'string') return stagesOfYaml(preview.finalYaml);
+      const d = await api(`${seg(projectId)}/_apis/build/builds`, {
+        query: { definitions: definitionId, queryOrder: 'queueTimeDescending', $top: 1, ...(branch ? { branchName: `refs/heads/${branch}` } : {}) },
+      });
       const latest = d.value?.[0];
       if (!latest) return [];
       const t = await api(`${seg(projectId)}/_apis/build/builds/${latest.id}/timeline`).catch((err) => (err.status === 404 ? null : Promise.reject(err)));

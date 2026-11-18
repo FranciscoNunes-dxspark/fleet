@@ -195,13 +195,8 @@ function parametersOf(ctx, row, on) {
 
 export async function runPipeline(ctx, row = ctx.current().pipeline, text = '') {
   if (!row) return ctx.note('Pick a pipeline first.', 'error');
-  const stages = ctx.service?.pipelineStages ? await ctx.service.pipelineStages(row.projectId, row.definition.id).catch(() => []) : [];
-  const { branch: picked, skip, unknown, params: given } = runArgs(text, stages);
-  if (unknown.length) {
-    const names = stages.map((s) => s.name).join(', ');
-    return ctx.note(`${row.definition.name} has no stage ${unknown.map((u) => `"${u}"`).join(' or ')}. ${names ? `Its stages: ${names}.` : 'It has no stages to leave out.'}`, 'error');
-  }
-  if (stages.length && skip.length >= stages.length) return ctx.note('Pick at least one stage to run.', 'error');
+  // The branch and parameters first: they decide which stages the run has.
+  const { branch: picked, params: given } = runArgs(text);
   const on = picked || branch(row.branch) || '';
   const params = await parametersOf(ctx, row, on);
   let values;
@@ -210,6 +205,13 @@ export async function runPipeline(ctx, row = ctx.current().pipeline, text = '') 
   } catch (err) {
     return ctx.note(`${err.message} /params lists every option.`, 'error');
   }
+  const stages = ctx.service?.pipelineStages ? await ctx.service.pipelineStages(row.projectId, row.definition.id, { branch: on || undefined, parameters: values }).catch(() => []) : [];
+  const { skip, unknown } = runArgs(text, stages);
+  if (unknown.length) {
+    const names = stages.map((s) => s.name).join(', ');
+    return ctx.note(`${row.definition.name} has no stage ${unknown.map((u) => `"${u}"`).join(' or ')}. ${names ? `Its stages: ${names}.` : 'It has no stages to leave out.'}`, 'error');
+  }
+  if (stages.length && skip.length >= stages.length) return ctx.note('Pick at least one stage to run.', 'error');
   const running = stages.filter((s) => !skip.includes(s.id)).map((s) => s.name);
   const skipping = stages.filter((s) => skip.includes(s.id)).map((s) => s.name);
   const set = Object.entries(values).map(([k, v]) => `${k}=${v}`);

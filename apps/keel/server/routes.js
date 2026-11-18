@@ -4,6 +4,7 @@ import express from 'express';
 import { PERMISSIONS, can } from './accounts.js';
 import { createOrgStore } from './orgs.js';
 import { createTypeColorStore } from './typecolors.js';
+import { parameterValues } from './domain/parameters.js';
 
 const INLINE_IMAGES = { png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', gif: 'image/gif', webp: 'image/webp', bmp: 'image/bmp' };
 
@@ -37,6 +38,18 @@ export function apiRouter({ channels = null, push = null, schedules = null } = {
     const n = Number(v);
     if (!Number.isInteger(n) || n <= 0) throw Object.assign(new Error('Invalid id'), { status: 400 });
     return n;
+  };
+  // A query parameter holding a JSON object of text values (a run's parameters); anything else is none.
+  const jsonObject = (v) => {
+    if (typeof v !== 'string' || !v) return undefined;
+    try {
+      const o = JSON.parse(v);
+      return o && typeof o === 'object' && !Array.isArray(o)
+        ? Object.fromEntries(Object.entries(o).filter(([, x]) => ['string', 'number', 'boolean'].includes(typeof x)).map(([k, x]) => [k, String(x)]))
+        : undefined;
+    } catch {
+      return undefined;
+    }
   };
 
   r.get('/meta', async (req, res) => {
@@ -142,10 +155,15 @@ export function apiRouter({ channels = null, push = null, schedules = null } = {
   // Run a pipeline on a branch once, at a set time, as the person scheduling it.
   r.post('/pipelines/schedule', need('pipelines.run'), async (req, res) => {
     if (!schedules) throw Object.assign(new Error('Scheduling is not available on this server'), { status: 404 });
-    const { projectId, definitionId, branch, at } = req.body || {};
+    const { projectId, definitionId, branch, at, parameters } = req.body || {};
     const { pipeline } = await req.ctx.service.pipelineRuns(projectId, num(definitionId));
     if (!pipeline) throw Object.assign(new Error('That pipeline isn\'t one of your tracked pipelines'), { status: 400 });
-    schedules.addRun({ pipeline, branch, at, owner: req.ctx.user ? { id: req.ctx.user.id, name: req.ctx.user.name } : null });
+    // Checked now, against the branch's YAML, so a wrong value is refused at once rather than at run time.
+    const given = parameters && typeof parameters === 'object' && !Array.isArray(parameters) ? parameters : {};
+    const values = Object.keys(given).length
+      ? parameterValues(await req.ctx.service.pipelineParameters(projectId, num(definitionId), typeof branch === 'string' ? branch.replace(/^refs\/heads\//, '') : undefined), given)
+      : {};
+    schedules.addRun({ pipeline, branch, at, parameters: values, owner: req.ctx.user ? { id: req.ctx.user.id, name: req.ctx.user.name } : null });
     res.json(await req.ctx.service.pipelineRuns(projectId, num(definitionId)));
   });
   // Cancel a schedule: what it does decides the permission (completing PRs, or running pipelines).
@@ -220,7 +238,11 @@ export function apiRouter({ channels = null, push = null, schedules = null } = {
   // Each project's pace for the epics' forecasts, apart from /epics so the tree never waits for it.
   r.get('/epics/pace', async (req, res) => res.json(await req.ctx.service.forecastPace(90)));
   r.get('/pipelines', async (req, res) => res.json(await req.ctx.service.pipelines()));
-  r.get('/pipelines/:projectId/:definitionId/stages', async (req, res) => res.json(await req.ctx.service.pipelineStages(req.params.projectId, req.params.definitionId)));
+  // The stages a run would have: ?branch= and ?parameters= (JSON, { name: value }) change them, as the run preview says.
+  r.get('/pipelines/:projectId/:definitionId/stages', async (req, res) => res.json(await req.ctx.service.pipelineStages(req.params.projectId, req.params.definitionId, {
+    branch: req.query.branch ? String(req.query.branch) : undefined,
+    parameters: jsonObject(req.query.parameters),
+  })));
   r.get('/pipelines/:projectId/:definitionId/parameters', async (req, res) => res.json(await req.ctx.service.pipelineParameters(req.params.projectId, req.params.definitionId, req.query.branch ? String(req.query.branch) : undefined)));
   r.get('/pipelines/:projectId/:definitionId/runs', async (req, res) => res.json(await req.ctx.service.pipelineRuns(req.params.projectId, req.params.definitionId)));
   r.get('/commits/:hash/carriers', async (req, res) => res.json(await req.ctx.service.commitUsage(req.params.hash, { repo: req.query.repo ? String(req.query.repo) : undefined })));

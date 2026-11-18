@@ -1979,11 +1979,16 @@ export function createService({
       return result;
     },
 
-    /** The stages a manual run can leave out ([] when it can't: one stage, no stages, or GitHub). */
-    async pipelineStages(projectId, definitionId) {
+    /**
+     * The stages a manual run on the branch (the pipeline's default when none is given) with these
+     * parameters can leave out ([] when it can't: one stage, no stages, or GitHub).
+     */
+    async pipelineStages(projectId, definitionId, { branch, parameters } = {}) {
       if (!(await tracked()).some((p) => p.id === projectId)) throw Object.assign(new Error('Unknown project'), { status: 400 });
       const id = Number(definitionId);
-      const stages = await cached(`builds:stages:${projectId}:${id}`, () => provider.listPipelineStages(projectId, id), 5 * MIN);
+      const on = typeof branch === 'string' ? branch.trim() : '';
+      const values = parameters && typeof parameters === 'object' ? Object.fromEntries(Object.entries(parameters).filter(([, v]) => v != null).map(([k, v]) => [k, String(v)]).sort(([a], [b]) => a.localeCompare(b))) : {};
+      const stages = await cached(`builds:stages:${projectId}:${id}:${on}:${JSON.stringify(values)}`, () => provider.listPipelineStages(projectId, id, { branch: on || undefined, parameters: values }), 5 * MIN);
       return stages.length > 1 ? stages : [];
     },
 
@@ -2006,10 +2011,11 @@ export function createService({
     },
 
     async queueBuild(projectId, definitionId, branch, { skipStages, parameters } = {}) {
-      const skip = Array.isArray(skipStages) && skipStages.length ? stagesToSkip(await this.pipelineStages(projectId, definitionId), skipStages) : [];
       const values = parameters && typeof parameters === 'object' && Object.keys(parameters).length
         ? parameterValues(await this.pipelineParameters(projectId, definitionId, branch), parameters)
         : {};
+      // The stages are checked against the run's own: its branch and parameters can change them.
+      const skip = Array.isArray(skipStages) && skipStages.length ? stagesToSkip(await this.pipelineStages(projectId, definitionId, { branch, parameters: values }), skipStages) : [];
       const options = { ...(skip.length ? { skipStages: skip } : {}), ...(Object.keys(values).length ? { parameters: values } : {}) };
       const result = await provider.queueBuild(projectId, Number(definitionId), branch, Object.keys(options).length ? options : undefined);
       cache.invalidate('builds');

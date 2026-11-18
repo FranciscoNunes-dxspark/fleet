@@ -165,3 +165,43 @@ test('notifications: a scheduled run that started, or did not', () => {
   assert.deepEqual(notes[0].target, { type: 'pipeline', key: 'p1:5', buildId: 901 });
   assert.equal(notes[1].body, 'On main: No such branch');
 });
+
+test('scheduled pipeline run with parameters: kept with it, sent when it starts, and a value since dropped fails naming the options', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'keel-runs-'));
+  const queued = [];
+  let options = ['qa', 'staging'];
+  const service = {
+    invalidate: () => {},
+    queueBuild: async (projectId, definitionId, branch, opts) => {
+      const env = opts?.parameters?.environment;
+      if (env && !options.includes(env)) throw new Error(`environment can't be "${env}". Its options: ${options.join(', ')}.`);
+      queued.push([branch, opts]);
+      return { id: 1, webUrl: null };
+    },
+  };
+  const schedules = createSchedules({ dataDir: dir, mock: false, every: 3_600_000, resolveService: () => service });
+  try {
+    const now = Date.now();
+    const pipeline = { projectId: 'p1', definition: { id: 5, name: 'web-CI' } };
+    const a = schedules.addRun({ pipeline, branch: 'main', at: new Date(now + 60 * MIN).toISOString(), parameters: { environment: 'staging', retries: 3, nested: { x: 1 } } }, now);
+    const b = schedules.addRun({ pipeline, branch: 'main', at: new Date(now + 90 * MIN).toISOString(), parameters: { environment: 'staging' } }, now);
+    const plain = schedules.addRun({ pipeline, branch: 'main', at: new Date(now + 100 * MIN).toISOString() }, now);
+    assert.deepEqual(a.parameters, { environment: 'staging', retries: '3' }, 'text values only');
+    assert.deepEqual(plain.parameters, {});
+    assert.deepEqual(schedules.upcomingRuns().get('p1:5')[0].parameters, { environment: 'staging', retries: '3' });
+
+    await schedules.tick(now + 61 * MIN);
+    assert.deepEqual(queued, [['main', { parameters: { environment: 'staging', retries: '3' } }]]);
+
+    options = ['qa', 'production'];
+    await schedules.tick(now + 91 * MIN);
+    const failed = schedules.forPipeline('p1', 5).find((s) => s.id === b.id);
+    assert.deepEqual([failed.status, failed.reason], ['failed', 'environment can\'t be "staging". Its options: qa, production.']);
+
+    await schedules.tick(now + 101 * MIN);
+    assert.deepEqual(queued[1], ['main', undefined], 'no parameters, none sent');
+  } finally {
+    schedules.close();
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});

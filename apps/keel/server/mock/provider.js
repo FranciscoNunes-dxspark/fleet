@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { stageSummary } from '../domain/releases.js';
-import { stagesOf } from '../domain/pipelines.js';
+import { stagesOf, stagesOfYaml } from '../domain/pipelines.js';
 import { pipelineParameters } from '../domain/parameters.js';
 import { demoFile } from './files.js';
 import { DEMO_FILES } from './advisories.js';
@@ -392,7 +392,17 @@ stages:
   - stage: Build
   - stage: Test
   - stage: DeploytoQA
+    displayName: Deploy to QA
+  - \${{ if eq(parameters.environment, 'production') }}:
+    - stage: DeployProduction
+      displayName: Deploy to production
 `;
+
+/** What Azure DevOps' run preview would make of CI_YAML: the one condition in it applied. */
+function previewCi(parameters = {}) {
+  const env = parameters.environment ?? 'qa';
+  return CI_YAML.replace(/^ {2}- \$\{\{ if eq\(parameters\.environment, 'production'\) \}\}:\n((?: {4}.*\n)+)/m, (_, body) => (env === 'production' ? body.replace(/^ {2}/gm, '') : ''));
+}
 const builds = [];
 let nextBuild = 20500;
 const definitions = ALL_REPOS.flatMap((r, i) => [
@@ -421,6 +431,8 @@ for (const def of definitions) {
       sourceBranch: prBuild ? `refs/pull/${800 + i}/merge` : def.repo.defaultBranch,
       repoId: def.repo.id,
       repoName: def.repo.name,
+      // The red runs were started by hand with parameters, so Run again has some to offer.
+      ...(forcedFail ? { parameters: { environment: 'staging', logLevel: 'debug' } } : {}),
       requestedFor: def.nightly ? person('svc', 'Scheduler', '') : pick(DEVS),
       // Run times vary by run (without using the shared random numbers); a few pipelines got slower this week.
       ...(() => {
@@ -1492,7 +1504,10 @@ export function createMockProvider() {
       return delay({ total: 412, passed: 412 - failed - 2, failed, other: 2 });
     },
 
-    listPipelineStages(projectId, definitionId) {
+    // A CI pipeline's stages as the run preview gives them; a nightly one's from its latest run.
+    listPipelineStages(projectId, definitionId, { parameters = {} } = {}) {
+      const def = definitions.find((d) => d.id === Number(definitionId));
+      if (def && !def.nightly) return delay(stagesOfYaml(previewCi(parameters)));
       const latest = builds.find((b) => b.definition.id === Number(definitionId));
       return delay(latest ? stagesOf(demoTimeline(latest)) : []);
     },

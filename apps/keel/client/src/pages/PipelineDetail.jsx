@@ -4,11 +4,12 @@ import { api } from '../api.js';
 import { useApi, useApp } from '../context.js';
 import { age, dateTime, dateTimeZone, defaultAt, localZone, pct } from '../format.js';
 import { t, tj, tx } from '../i18n.js';
-import { Checkbox, Chip, Confirm, ErrorBox, ExternalLink, Loading, Select } from '../ui.jsx';
+import { Checkbox, Chip, Confirm, ErrorBox, ExternalLink, Loading } from '../ui.jsx';
+import { RunConfirm, RunParameter } from '../runparams.jsx';
 import { useProjectLabel, useSourceName } from '../orgs.js';
 import { FlakyTests } from './Pipelines.jsx';
 import { RunTimesChart } from '../charts.jsx';
-import { Button, RadioGroup, TextArea, TextField } from '@radix-ui/themes';
+import { Button, TextField } from '@radix-ui/themes';
 
 // Pipeline details (drawer): the pipeline's latest runs, and for one run its
 // stages, jobs and steps, the failed steps' errors and last log lines, the
@@ -84,9 +85,9 @@ export default function PipelineDetail({ target }) {
   }));
 
   // Run once at a set time (server/schedules.js), as you.
-  const scheduleRun = async ({ branch: on, at }) => {
+  const scheduleRun = async ({ branch: on, at, parameters = {} }) => {
     try {
-      await api('/pipelines/schedule', { method: 'POST', body: { projectId, definitionId: Number(definitionId), branch: on, at } });
+      await api('/pipelines/schedule', { method: 'POST', body: { projectId, definitionId: Number(definitionId), branch: on, at, ...(Object.keys(parameters).length ? { parameters } : {}) } });
       toast(t('{name} will run on {branch} {when}', { name, branch: on, when: dateTime(at) }));
       setScheduling(false);
       refresh();
@@ -128,7 +129,6 @@ export default function PipelineDetail({ target }) {
       toast(e.message, 'bad');
     }
   };
-  const queue = () => queueOn(branch);
 
   return (
     <div className="detail pipeline-detail">
@@ -163,11 +163,13 @@ export default function PipelineDetail({ target }) {
                 {s.status === 'scheduled' ? (
                   <span>
                     {tj('{when} on {branch}', { when: <strong>{dateTimeZone(s.at)}</strong>, branch: <code className="branch">{s.branch}</code> })}
+                    <ScheduledParameters values={s.parameters} />
                     {s.ownerName && <span className="muted small"> · {t('by {name}', { name: s.ownerName })}</span>}
                   </span>
                 ) : s.status === 'done' ? (
                   <span className="muted">
                     {tj('Started {when} on {branch}', { when: dateTime(s.finishedAt || s.at), branch: <code className="branch">{s.branch}</code> })}
+                    <ScheduledParameters values={s.parameters} />
                     {s.run?.webUrl && <> · <a href={s.run.webUrl} target="_blank" rel="noreferrer noopener">{t('View the run')}</a></>}
                   </span>
                 ) : (
@@ -181,7 +183,7 @@ export default function PipelineDetail({ target }) {
       )}
 
       {runningOn && <ScheduleRunForm now projectId={projectId} definitionId={definitionId} repoId={p?.repoId} branch={branch} onCancel={() => setRunningOn(false)} onSchedule={async ({ branch: on, skipStages, parameters }) => { await queueOn(on, skipStages, parameters); setRunningOn(false); }} />}
-      {scheduling && <ScheduleRunForm projectId={projectId} repoId={p?.repoId} branch={branch} onCancel={() => setScheduling(false)} onSchedule={scheduleRun} />}
+      {scheduling && <ScheduleRunForm projectId={projectId} definitionId={definitionId} repoId={p?.repoId} branch={branch} onCancel={() => setScheduling(false)} onSchedule={scheduleRun} />}
 
       <section className="detail-section">
         <h3>{t('Recent runs')}</h3>
@@ -222,7 +224,7 @@ export default function PipelineDetail({ target }) {
 
       <section className="detail-actions sticky-actions">
         {can('pipelines.run') && branch && (
-          <Confirm text={t('Run on {branch}?', { branch })} onConfirm={queue} className="btn btn-small btn-primary">{t('Run')}</Confirm>
+          <RunConfirm projectId={projectId} definitionId={definitionId} branch={branch} text={t('Run on {branch}?', { branch })} onRun={(parameters) => queueOn(branch, [], parameters)} className="btn btn-small btn-primary">{t('Run')}</RunConfirm>
         )}
         {can('pipelines.run') && !runningOn && <Button size="1" variant="outline" color="gray" type="button" onClick={() => { setRunningOn(true); setScheduling(false); }}>{t('Run on…')}</Button>}
         {can('pipelines.run') && !scheduling && <Button size="1" variant="outline" color="gray" type="button" onClick={() => { setScheduling(true); setRunningOn(false); }}>{t('Run at…')}</Button>}
@@ -235,12 +237,31 @@ export default function PipelineDetail({ target }) {
 
 /**
  * Run once at a set time: the branch (the pipeline's own by default) and when. Run now
- * (`now`) also offers the pipeline's stages, all ticked, to leave some out of the run, and its
+ * (`now`) also offers the pipeline's stages, all ticked, to leave some out of the run. Both offer its
  * parameters, as its YAML has them on that branch, each with every option it takes.
  */
 function ScheduleRunForm({ projectId, definitionId, repoId, branch: home, now, onCancel, onSchedule }) {
   const { data: branches } = useApi(repoId ? `/repos/${encodeURIComponent(projectId)}/${encodeURIComponent(repoId)}/branches` : null);
-  const { data: stages } = useApi(now && definitionId ? `/pipelines/${encodeURIComponent(projectId)}/${encodeURIComponent(definitionId)}/stages` : null);
+  const [branch, setBranch] = useState(home || '');
+  // Parameters are read from the branch's YAML once the branch is settled (on leaving the field), not on every key.
+  const [paramsOn, setParamsOn] = useState(home || '');
+  const { data: params } = useApi(definitionId ? `/pipelines/${encodeURIComponent(projectId)}/${encodeURIComponent(definitionId)}/parameters${paramsOn ? `?branch=${encodeURIComponent(paramsOn)}` : ''}` : null);
+  const [values, setValues] = useState({});
+  const valueOf = (p) => values[p.name] ?? p.default ?? '';
+  const setValue = (name, v) => setValues((prev) => ({ ...prev, [name]: v }));
+  const missing = (params || []).some((p) => p.required && p.default == null && !String(valueOf(p)).trim());
+  // Only what was changed goes with the run: the rest the pipeline sets itself.
+  const changed = (params || []).filter((p) => values[p.name] !== undefined && values[p.name] !== (p.default ?? ''));
+  const chosen = JSON.stringify(Object.fromEntries(changed.map((p) => [p.name, values[p.name]])));
+  // The stages are the run preview's for that branch and those parameters (a parameter can add or drop a
+  // stage), asked again a moment after the last change rather than on every key typed in a field.
+  const [stagesFor, setStagesFor] = useState(chosen);
+  useEffect(() => {
+    const timer = setTimeout(() => setStagesFor(chosen), 400);
+    return () => clearTimeout(timer);
+  }, [chosen]);
+  const stagesQuery = [paramsOn ? `branch=${encodeURIComponent(paramsOn)}` : '', stagesFor !== '{}' ? `parameters=${encodeURIComponent(stagesFor)}` : ''].filter(Boolean).join('&');
+  const { data: stages } = useApi(now && definitionId ? `/pipelines/${encodeURIComponent(projectId)}/${encodeURIComponent(definitionId)}/stages${stagesQuery ? `?${stagesQuery}` : ''}` : null);
   const [skipped, setSkipped] = useState(() => new Set());
   const skipping = (stages || []).filter((s) => skipped.has(s.id)).map((s) => s.id);
   const noneLeft = !!stages?.length && skipping.length >= stages.length;
@@ -250,14 +271,6 @@ function ScheduleRunForm({ projectId, definitionId, repoId, branch: home, now, o
     else next.add(id);
     return next;
   });
-  const [branch, setBranch] = useState(home || '');
-  // Parameters are read from the branch's YAML once the branch is settled (on leaving the field), not on every key.
-  const [paramsOn, setParamsOn] = useState(home || '');
-  const { data: params } = useApi(now && definitionId ? `/pipelines/${encodeURIComponent(projectId)}/${encodeURIComponent(definitionId)}/parameters${paramsOn ? `?branch=${encodeURIComponent(paramsOn)}` : ''}` : null);
-  const [values, setValues] = useState({});
-  const valueOf = (p) => values[p.name] ?? p.default ?? '';
-  const setValue = (name, v) => setValues((prev) => ({ ...prev, [name]: v }));
-  const missing = (params || []).some((p) => p.required && p.default == null && !String(valueOf(p)).trim());
   const [at, setAt] = useState(() => defaultAt());
   const [busy, setBusy] = useState(false);
   const ref = useRef(null);
@@ -269,9 +282,8 @@ function ScheduleRunForm({ projectId, definitionId, repoId, branch: home, now, o
   const submit = async (e) => {
     e.preventDefault();
     setBusy(true);
-    // Only what was changed goes with the run: the rest the pipeline sets itself.
-    const parameters = Object.fromEntries((params || []).filter((p) => values[p.name] !== undefined && values[p.name] !== (p.default ?? '')).map((p) => [p.name, values[p.name]]));
-    await onSchedule({ branch: branch.trim(), at: now ? undefined : new Date(at).toISOString(), skipStages: now ? skipping : [], parameters: now ? parameters : {} });
+    const parameters = JSON.parse(chosen);
+    await onSchedule({ branch: branch.trim(), at: now ? undefined : new Date(at).toISOString(), skipStages: now ? skipping : [], parameters });
     setBusy(false);
   };
   return (
@@ -291,7 +303,7 @@ function ScheduleRunForm({ projectId, definitionId, repoId, branch: home, now, o
           {noneLeft && <span className="text-warn small">{t('Pick at least one stage to run.')}</span>}
         </fieldset>
       )}
-      {now && params?.length > 0 && (
+      {params?.length > 0 && (
         <fieldset className="field run-params">
           <legend>{t('Parameters')}</legend>
           {params.map((p) => <RunParameter key={p.name} p={p} value={valueOf(p)} onChange={(v) => setValue(p.name, v)} />)}
@@ -302,55 +314,18 @@ function ScheduleRunForm({ projectId, definitionId, repoId, branch: home, now, o
         {localZone() && <span className="muted small" id="run-at-zone">{t('{zone} time', { zone: localZone() })}</span>}
       </label>}
       <div className="complete-actions">
-        <Button size="1" variant="solid" type="submit" disabled={busy || !branch.trim() || (!now && !at) || noneLeft || (now && missing)}>{now ? (busy ? t('Starting…') : t('Run')) : busy ? t('Scheduling…') : t('Schedule run')}</Button>
+        <Button size="1" variant="solid" type="submit" disabled={busy || !branch.trim() || (!now && !at) || noneLeft || missing}>{now ? (busy ? t('Starting…') : t('Run')) : busy ? t('Scheduling…') : t('Schedule run')}</Button>
         <Button size="1" variant="ghost" color="gray" type="button" onClick={onCancel}>{t('Cancel')}</Button>
       </div>
     </form>
   );
 }
 
-/**
- * One parameter of a run: every option it takes in view (a list as radios, or a menu when it's
- * long), a tick for true or false, else a field. Its name shows under its label when they differ.
- */
-function RunParameter({ p, value, onChange }) {
-  const id = `run-param-${p.name}`;
-  const label = (
-    <span className="run-param-label">
-      {p.label}{p.label !== p.name && <code className="muted small"> {p.name}</code>}
-    </span>
-  );
-  if (p.type === 'boolean') {
-    return <label className="check"><Checkbox checked={value === 'true'} onChange={(e) => onChange(e.target.checked ? 'true' : 'false')} /> {label}</label>;
-  }
-  if (p.options.length > 8) {
-    return (
-      <label className="field">{label}
-        <Select value={value} onChange={(e) => onChange(e.target.value)} aria-label={p.label}>
-          {!p.options.includes(value) && <option value="">—</option>}
-          {p.options.map((o) => <option key={o} value={o}>{o === p.default ? t('{value} (default)', { value: o }) : o}</option>)}
-        </Select>
-      </label>
-    );
-  }
-  if (p.options.length) {
-    return (
-      <div className="field" role="group" aria-labelledby={id}>
-        <span id={id}>{label}</span>
-        <RadioGroup.Root size="1" value={value} onValueChange={onChange}>
-          {p.options.map((o) => <RadioGroup.Item key={o} value={o}>{o === p.default ? t('{value} (default)', { value: o }) : o}</RadioGroup.Item>)}
-        </RadioGroup.Root>
-      </div>
-    );
-  }
-  if (p.type === 'object') {
-    return <label className="field">{label}<TextArea className="mono" size="1" value={value} onChange={(e) => onChange(e.target.value)} spellCheck={false} /></label>;
-  }
-  return (
-    <label className="field">{label}
-      <TextField.Root variant="surface" color="gray" type={p.type === 'number' ? 'number' : 'text'} value={value} onChange={(e) => onChange(e.target.value)} required={p.required && p.default == null} spellCheck={false} />
-    </label>
-  );
+/** The parameters a scheduled run was given (only those changed from their defaults), after its branch. */
+function ScheduledParameters({ values }) {
+  const set = Object.entries(values || {});
+  if (!set.length) return null;
+  return <> {tj('with {parameters}', { parameters: set.map(([k, v], i) => <span key={k}>{i ? ', ' : ''}<code>{k}={v}</code></span>) })}</>;
 }
 
 /** Stages → jobs → steps of one run. Phases are folded into their jobs, checkpoints left out. */

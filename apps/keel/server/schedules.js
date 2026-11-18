@@ -69,7 +69,7 @@ export function createSchedules({
     status: s.status, reason: s.reason || null, finishedAt: s.finishedAt || null, createdAt: s.createdAt,
     ...(isCompletion(s)
       ? { repoId: s.repoId, prId: s.prId, title: s.title, mergeStrategy: s.options.mergeStrategy }
-      : { definitionId: s.definitionId, pipelineName: s.pipelineName, branch: s.branch, run: s.run || null }),
+      : { definitionId: s.definitionId, pipelineName: s.pipelineName, branch: s.branch, parameters: s.parameters || {}, run: s.run || null }),
   });
   const ownerOf = (owner) => ({ ownerId: owner?.id ?? null, ownerName: owner?.name ?? null });
   const checkTime = (at, ms) => {
@@ -92,7 +92,8 @@ export function createSchedules({
     if (!service) return done('failed', 'The person who scheduled it has no working Azure DevOps token in Keel');
     if (!isCompletion(s)) {
       try {
-        const run = await service.queueBuild(s.projectId, s.definitionId, s.branch);
+        // The parameters are checked again against the pipeline's YAML as it is now, so a value since dropped fails with its options named.
+        const run = await service.queueBuild(s.projectId, s.definitionId, s.branch, s.parameters && Object.keys(s.parameters).length ? { parameters: s.parameters } : undefined);
         return done('done', null, { run: { id: run?.id ?? null, webUrl: run?.webUrl || null } });
       } catch (err) {
         return done('failed', err.message);
@@ -163,12 +164,19 @@ export function createSchedules({
       return view(s);
     },
 
-    /** Run a pipeline on a branch once, at `at`. `pipeline`: { projectId, definition: { id, name } }. */
-    addRun({ pipeline, branch, at, owner = null }, ms = Date.now()) {
+    /**
+     * Run a pipeline on a branch once, at `at`. `pipeline`: { projectId, definition: { id, name } };
+     * `parameters`: { name: value } as text, already checked against the pipeline's (routes.js).
+     */
+    addRun({ pipeline, branch, at, parameters = {}, owner = null }, ms = Date.now()) {
       const when = checkTime(at, ms);
       const b = String(branch || '').trim().replace(/^refs\/heads\//, '');
       if (!b) throw bad('Pick a branch');
       if (b.length > 250 || /[\s~^:?*[\\]|\.\.|@\{|^\/|\/$/.test(b)) throw bad(`"${b}" isn't a valid branch name`);
+      const values = Object.fromEntries(Object.entries(parameters && typeof parameters === 'object' ? parameters : {})
+        .filter(([k, v]) => typeof k === 'string' && k.length <= 200 && v != null && typeof v !== 'object')
+        .slice(0, 100)
+        .map(([k, v]) => [k, String(v).slice(0, 4000)]));
       const s = {
         id: crypto.randomUUID(),
         kind: 'run',
@@ -176,6 +184,7 @@ export function createSchedules({
         definitionId: Number(pipeline.definition.id),
         pipelineName: String(pipeline.definition.name || '').slice(0, 200),
         branch: b,
+        ...(Object.keys(values).length ? { parameters: values } : {}),
         at: when,
         ...ownerOf(owner),
         status: 'scheduled',

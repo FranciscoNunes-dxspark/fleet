@@ -153,3 +153,13 @@ test('demo GitHub: a workflow\'s inputs with their options, sent as inputs', asy
   const ci = defs.find((d) => d.name === 'CI' && d.repoName === 'web-app');
   assert.deepEqual(await gh.listPipelineParameters('gh-octo-demo', ci.id), []);
 });
+
+test('Azure DevOps: a run keeps the parameters it was queued with, as text', async (t) => {
+  t.mock.method(globalThis, 'fetch', async () => new Response(JSON.stringify({ value: [
+    { id: 1, project: { id: 'p1', name: 'P' }, definition: { id: 5 }, sourceBranch: 'refs/heads/main', templateParameters: { environment: 'staging', config: { a: 1 } } },
+    { id: 2, project: { id: 'p1', name: 'P' }, definition: { id: 5 }, sourceBranch: 'refs/heads/main' },
+  ] }), { status: 200, headers: { 'content-type': 'application/json' } }));
+  const provider = createAzdoProvider({ orgUrl: 'https://dev.azure.com/acme', pat: 'x' });
+  const runs = await provider.listDefinitionRuns('p1', 5);
+  assert.deepEqual(runs.map((r) => r.parameters), [{ environment: 'staging', config: '{"a":1}' }, null]);
+});

@@ -74,6 +74,8 @@
 /* A question asked of the page or the details panel: above both. */
 .rt-BaseDialogOverlay { z-index: 50; }
 .rt-AlertDialogContent.confirm-pop { position: relative; z-index: auto; width: auto; max-width: 340px; padding: var(--space-4); border: 0; box-shadow: var(--shadow-6); display: grid; gap: 14px; }
+/* A run's confirmation holds its parameters: wider, and scrolling when they're many. */
+.rt-AlertDialogContent.confirm-pop.run-pop { max-width: 420px; max-height: 80vh; overflow-y: auto; }
 .confirm-actions { display: flex; gap: 8px; justify-content: flex-end; }
 .rt-Tooltip { font-size: 12px; }
 
