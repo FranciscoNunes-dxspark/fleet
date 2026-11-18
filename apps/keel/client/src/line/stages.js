@@ -127,8 +127,10 @@ export function buildLine({ workitems, prs, pending, pipelines, approvals, produ
       reason: p.health === 'failing' ? { code: 'red', n: p.failStreak } : { code: 'running' },
       runs: (p.recent || []).slice(0, 10).map((r) => r.result || r.status),
       mine: false, open: { type: 'pipeline', key: p.key }, projectId: p.projectId,
-      // Running it again from the card, on the branch it's judged on.
-      rerun: p.health === 'failing' && !running && p.definition.id != null ? { projectId: p.projectId, definitionId: p.definition.id, branch: p.branch } : null,
+      // Running it again from the card, on the branch it's judged on, offering the parameters the red run was given.
+      rerun: p.health === 'failing' && !running && p.definition.id != null
+        ? { projectId: p.projectId, definitionId: p.definition.id, branch: p.branch, ...(p.latest?.parameters && Object.keys(p.latest.parameters).length ? { parameters: p.latest.parameters } : {}) }
+        : null,
     });
   }
 

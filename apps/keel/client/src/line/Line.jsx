@@ -7,6 +7,7 @@ import { useApi, useApp } from '../context.js';
 import { approvalPath } from '../orgs.js';
 import { age } from '../format.js';
 import { Avatar, Confirm, sameTarget, useMedia, useTypeColor } from '../ui.jsx';
+import { RunConfirm } from '../runparams.jsx';
 import { Icon } from '../icons.jsx';
 import { t } from '../i18n.js';
 import { STAGES } from './stages.js';
@@ -298,7 +299,13 @@ function CardActions({ card }) {
   }
   if (card.rerun && can('pipelines.run')) {
     const { branch } = card.rerun;
-    actions.push(<Confirm key="rerun" text={t('Run on {branch}?', { branch })} className="btn btn-small" onConfirm={() => run('/pipelines/queue', card.rerun, t('Queued {name} on {branch}', { name: card.title, branch }))}>{t('Run again')}</Confirm>);
+    const { projectId, definitionId, parameters: earlier } = card.rerun;
+    actions.push(
+      <RunConfirm key="rerun" projectId={projectId} definitionId={definitionId} branch={branch} initial={earlier} text={t('Run on {branch}?', { branch })} className="btn btn-small"
+        onRun={(parameters) => run('/pipelines/queue', { projectId, definitionId, branch, ...(Object.keys(parameters).length ? { parameters } : {}) }, t('Queued {name} on {branch}', { name: card.title, branch }))}>
+        {t('Run again')}
+      </RunConfirm>,
+    );
   }
   if (!actions.length) return null;
   return <div className="lc-actions">{actions}</div>;

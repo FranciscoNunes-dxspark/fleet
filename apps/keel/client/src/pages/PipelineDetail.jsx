@@ -4,11 +4,12 @@ import { api } from '../api.js';
 import { useApi, useApp } from '../context.js';
 import { age, dateTime, dateTimeZone, defaultAt, localZone, pct } from '../format.js';
 import { t, tj, tx } from '../i18n.js';
-import { Checkbox, Chip, Confirm, ErrorBox, ExternalLink, Loading, Select } from '../ui.jsx';
+import { Checkbox, Chip, Confirm, ErrorBox, ExternalLink, Loading } from '../ui.jsx';
+import { RunConfirm, RunParameter } from '../runparams.jsx';
 import { useProjectLabel, useSourceName } from '../orgs.js';
 import { FlakyTests } from './Pipelines.jsx';
 import { RunTimesChart } from '../charts.jsx';
-import { Button, RadioGroup, TextArea, TextField } from '@radix-ui/themes';
+import { Button, TextField } from '@radix-ui/themes';
 
 // Pipeline details (drawer): the pipeline's latest runs, and for one run its
 // stages, jobs and steps, the failed steps' errors and last log lines, the
@@ -128,7 +129,6 @@ export default function PipelineDetail({ target }) {
       toast(e.message, 'bad');
     }
   };
-  const queue = () => queueOn(branch);
 
   return (
     <div className="detail pipeline-detail">
@@ -224,7 +224,7 @@ export default function PipelineDetail({ target }) {
 
       <section className="detail-actions sticky-actions">
         {can('pipelines.run') && branch && (
-          <Confirm text={t('Run on {branch}?', { branch })} onConfirm={queue} className="btn btn-small btn-primary">{t('Run')}</Confirm>
+          <RunConfirm projectId={projectId} definitionId={definitionId} branch={branch} text={t('Run on {branch}?', { branch })} onRun={(parameters) => queueOn(branch, [], parameters)} className="btn btn-small btn-primary">{t('Run')}</RunConfirm>
         )}
         {can('pipelines.run') && !runningOn && <Button size="1" variant="outline" color="gray" type="button" onClick={() => { setRunningOn(true); setScheduling(false); }}>{t('Run on…')}</Button>}
         {can('pipelines.run') && !scheduling && <Button size="1" variant="outline" color="gray" type="button" onClick={() => { setScheduling(true); setRunningOn(false); }}>{t('Run at…')}</Button>}
@@ -326,50 +326,6 @@ function ScheduledParameters({ values }) {
   const set = Object.entries(values || {});
   if (!set.length) return null;
   return <> {tj('with {parameters}', { parameters: set.map(([k, v], i) => <span key={k}>{i ? ', ' : ''}<code>{k}={v}</code></span>) })}</>;
-}
-
-/**
- * One parameter of a run: every option it takes in view (a list as radios, or a menu when it's
- * long), a tick for true or false, else a field. Its name shows under its label when they differ.
- */
-function RunParameter({ p, value, onChange }) {
-  const id = `run-param-${p.name}`;
-  const label = (
-    <span className="run-param-label">
-      {p.label}{p.label !== p.name && <code className="muted small"> {p.name}</code>}
-    </span>
-  );
-  if (p.type === 'boolean') {
-    return <label className="check"><Checkbox checked={value === 'true'} onChange={(e) => onChange(e.target.checked ? 'true' : 'false')} /> {label}</label>;
-  }
-  if (p.options.length > 8) {
-    return (
-      <label className="field">{label}
-        <Select value={value} onChange={(e) => onChange(e.target.value)} aria-label={p.label}>
-          {!p.options.includes(value) && <option value="">—</option>}
-          {p.options.map((o) => <option key={o} value={o}>{o === p.default ? t('{value} (default)', { value: o }) : o}</option>)}
-        </Select>
-      </label>
-    );
-  }
-  if (p.options.length) {
-    return (
-      <div className="field" role="group" aria-labelledby={id}>
-        <span id={id}>{label}</span>
-        <RadioGroup.Root size="1" value={value} onValueChange={onChange}>
-          {p.options.map((o) => <RadioGroup.Item key={o} value={o}>{o === p.default ? t('{value} (default)', { value: o }) : o}</RadioGroup.Item>)}
-        </RadioGroup.Root>
-      </div>
-    );
-  }
-  if (p.type === 'object') {
-    return <label className="field">{label}<TextArea className="mono" size="1" value={value} onChange={(e) => onChange(e.target.value)} spellCheck={false} /></label>;
-  }
-  return (
-    <label className="field">{label}
-      <TextField.Root variant="surface" color="gray" type={p.type === 'number' ? 'number' : 'text'} value={value} onChange={(e) => onChange(e.target.value)} required={p.required && p.default == null} spellCheck={false} />
-    </label>
-  );
 }
 
 /** Stages → jobs → steps of one run. Phases are folded into their jobs, checkpoints left out. */

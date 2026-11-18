@@ -159,6 +159,10 @@ export function createAzdoProvider({ orgUrl = config.orgUrl, pat = config.pat, t
     queuedAt: b.queueTime,
     startedAt: b.startTime || null,
     finishedAt: b.finishTime || null,
+    // The runtime parameters the run was queued with (Run again offers them again); none for most runs.
+    parameters: b.templateParameters && typeof b.templateParameters === 'object' && Object.keys(b.templateParameters).length
+      ? Object.fromEntries(Object.entries(b.templateParameters).map(([k, v]) => [k, typeof v === 'string' ? v : JSON.stringify(v)]))
+      : null,
     webUrl: b._links?.web?.href || `${org}/${seg(b.project?.name)}/_build/results?buildId=${b.id}`,
   });
   const rm = releaseHost(org);

@@ -121,3 +121,10 @@ test('approval and red pipeline cards carry what acting on them needs', () => {
   assert.deepEqual(cards.find((c) => c.kind === 'approval').approval, { kind: 'release', id: 9, org: undefined, canDecide: true });
   assert.deepEqual(cards.find((c) => c.kind === 'pipeline').rerun, { projectId: 'pp', definitionId: 4, branch: 'main' });
 });
+
+test('Run again offers the parameters the red run was given', () => {
+  const line = buildLine({
+    pipelines: [{ key: 'p', projectId: 'pp', definition: { id: 4, name: 'ci' }, branch: 'main', health: 'failing', failStreak: 1, running: [], recent: [], latest: { parameters: { environment: 'staging' } } }],
+  }, NOW);
+  assert.deepEqual(stage(line, 'deploying').cards[0].rerun, { projectId: 'pp', definitionId: 4, branch: 'main', parameters: { environment: 'staging' } });
+});

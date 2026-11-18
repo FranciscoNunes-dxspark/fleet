@@ -53,6 +53,8 @@ export default {
   Parameters: 'Parâmetros',
   '{value} (default)': '{value} (predefinido)',
   'with {parameters}': 'com {parameters}',
+  'Reading its parameters…': 'A ler os parâmetros…',
+  'As the run it repeats had them.': 'Como a execução que repete os tinha.',
   'Run queued on {branch}, skipping {n} stages': 'Execução em fila na {branch}, sem {n} fases',
   'Keel starts one run now, as you, on the branch you pick.': 'O Keel inicia já uma execução, como você, na branch que escolher.',
   'Run at a set time': 'Correr a uma hora marcada',

@@ -431,6 +431,8 @@ for (const def of definitions) {
       sourceBranch: prBuild ? `refs/pull/${800 + i}/merge` : def.repo.defaultBranch,
       repoId: def.repo.id,
       repoName: def.repo.name,
+      // The red runs were started by hand with parameters, so Run again has some to offer.
+      ...(forcedFail ? { parameters: { environment: 'staging', logLevel: 'debug' } } : {}),
       requestedFor: def.nightly ? person('svc', 'Scheduler', '') : pick(DEVS),
       // Run times vary by run (without using the shared random numbers); a few pipelines got slower this week.
       ...(() => {
