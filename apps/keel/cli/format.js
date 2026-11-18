@@ -589,3 +589,23 @@ export function monitorFullText(m, target, now = Date.now()) {
   }
   return out.join('\n');
 }
+
+/**
+ * A pipeline's parameters for /params: each with its name, what it's for, its type and default,
+ * and every option it takes, then how to set them with /run.
+ */
+export function parametersText(params, on = '') {
+  if (!params.length) return 'This pipeline has no parameters a run can set (a classic build, YAML without runtime parameters, or a file Keel can\'t read).';
+  const lines = [];
+  for (const p of params) {
+    lines.push(`${p.name}${p.label !== p.name ? `  ${p.label}` : ''}`);
+    lines.push(`  ${p.type}${p.default != null && p.default !== '' ? `, ${p.default} by default` : p.required ? ', needs a value' : ''}`);
+    if (p.options.length) lines.push(...p.options.map((o) => `  ${o === p.default ? '●' : '○'} ${o}`));
+    else lines.push(`  ${p.type === 'object' ? 'any YAML' : 'any value'}`);
+    lines.push('');
+  }
+  const first = params[0];
+  const example = `${first.name}=${first.options.find((o) => o !== first.default) ?? first.options[0] ?? (first.type === 'number' ? '1' : 'value')}`;
+  lines.push(`Set them with /run ${on || '<branch>'} ${example} (quote a value with spaces: name="two words").`);
+  return lines.join('\n');
+}

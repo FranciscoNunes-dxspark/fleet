@@ -25,9 +25,9 @@ test('stages to skip: known ones once each, and never all of them', () => {
 });
 
 test('/run reads the branch and the stages after a minus, by either name', () => {
-  assert.deepEqual(runArgs('', STAGES), { branch: '', skip: [], unknown: [] });
-  assert.deepEqual(runArgs('release/1.2 -deploy-to-qa -TEST -Test', STAGES), { branch: 'release/1.2', skip: ['DeployQA', 'Test'], unknown: [] });
-  assert.deepEqual(runArgs('-Lint', STAGES), { branch: '', skip: [], unknown: ['Lint'] });
+  assert.deepEqual(runArgs('', STAGES), { branch: '', skip: [], unknown: [], params: {} });
+  assert.deepEqual(runArgs('release/1.2 -deploy-to-qa -TEST -Test', STAGES), { branch: 'release/1.2', skip: ['DeployQA', 'Test'], unknown: [], params: {} });
+  assert.deepEqual(runArgs('-Lint', STAGES), { branch: '', skip: [], unknown: ['Lint'], params: {} });
 });
 
 test('Azure DevOps: skipping stages goes through the Pipelines API; a plain run stays on the Build API', async (t) => {

@@ -6,6 +6,7 @@ import { config } from '../config.js';
 import { createClient, seg } from './client.js';
 import { stageSummary } from '../domain/releases.js';
 import { stagesOf } from '../domain/pipelines.js';
+import { pipelineParameters } from '../domain/parameters.js';
 
 const EMPTY_GUID = '00000000-0000-0000-0000-000000000000';
 
@@ -1443,12 +1444,39 @@ export function createAzdoProvider({ orgUrl = config.orgUrl, pat = config.pat, t
       return stagesOf((t?.records || []).map((r) => ({ type: r.type, identifier: r.identifier || null, name: r.name, order: r.order ?? 0 })));
     },
 
-    async queueBuild(projectId, definitionId, branch, { skipStages = [] } = {}) {
-      // Only the Pipelines API skips stages; the Build API it otherwise goes through has no such field.
-      if (skipStages.length) {
+    /**
+     * A YAML pipeline's runtime parameters with every value each may take (domain/parameters.js),
+     * read from its YAML file on the branch (the pipeline's default branch when none is given).
+     * A file in Azure Repos is read through Git; one in GitHub or Bitbucket through the pipeline's
+     * service connection. A classic build has none.
+     */
+    async listPipelineParameters(projectId, definitionId, branch) {
+      const d = await api(`${seg(projectId)}/_apis/build/definitions/${Number(definitionId)}`);
+      const file = d?.process?.yamlFilename;
+      const repo = d?.repository;
+      if (!file || !repo?.id) return [];
+      const on = branch || stripRef(repo.defaultBranch) || 'main';
+      const text = repo.type === 'TfsGit'
+        ? await apiText(`${seg(projectId)}/_apis/git/repositories/${seg(repo.id)}/items`, {
+          query: { path: `/${file.replace(/^\/+/, '')}`, 'versionDescriptor.version': on, 'versionDescriptor.versionType': 'branch', $format: 'text' },
+        })
+        : await apiText(`${seg(projectId)}/_apis/sourceProviders/${seg(repo.type)}/filecontents`, {
+          query: { serviceEndpointId: repo.properties?.connectedServiceId, repository: repo.id, commitOrBranch: on, path: file },
+          apiVersion: '7.1-preview.1',
+        });
+      return pipelineParameters(text);
+    },
+
+    async queueBuild(projectId, definitionId, branch, { skipStages = [], parameters = {} } = {}) {
+      // Only the Pipelines API skips stages and takes runtime parameters; the Build API it otherwise goes through has neither.
+      if (skipStages.length || Object.keys(parameters).length) {
         const r = await api(`${seg(projectId)}/_apis/pipelines/${Number(definitionId)}/runs`, {
           method: 'POST',
-          body: { stagesToSkip: skipStages, ...(branch ? { resources: { repositories: { self: { refName: `refs/heads/${branch}` } } } } : {}) },
+          body: {
+            ...(skipStages.length ? { stagesToSkip: skipStages } : {}),
+            ...(Object.keys(parameters).length ? { templateParameters: parameters } : {}),
+            ...(branch ? { resources: { repositories: { self: { refName: `refs/heads/${branch}` } } } } : {}),
+          },
         });
         return { id: r.id, webUrl: r._links?.web?.href };
       }

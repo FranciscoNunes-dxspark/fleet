@@ -5,6 +5,48 @@
 import { createGithubProvider } from '../github/provider.js';
 import { DEMO_GITHUB_FILES } from './advisories.js';
 
+// The workflows started by hand, with their inputs (a choice lists its options).
+const WORKFLOW_FILES = {
+  'web-app': {
+    '.github/workflows/deploy.yml': `name: Deploy
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: Where to deploy
+        type: choice
+        required: true
+        default: staging
+        options: [staging, production]
+      dry_run:
+        description: Plan only, change nothing
+        type: boolean
+        default: false
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - run: ./deploy.sh
+`,
+  },
+  api: {
+    '.github/workflows/ci.yml': `name: CI
+on:
+  push:
+  workflow_dispatch:
+    inputs:
+      node:
+        description: Node version
+        type: choice
+        options: ['22', '24']
+        default: '22'
+jobs:
+  test:
+    runs-on: ubuntu-latest
+`,
+  },
+};
+
 // What GitHub sends for a changed file: a unified patch of it, which the demo makes up.
 const withPatch = (f) => (f.patch || f.status === 'removed' ? f : {
   ...f,
@@ -309,7 +351,7 @@ export function createDemoApi(owner) {
     ['GET', /^repos\/[^/]+\/([^/]+)\/actions\/workflows\/(\d+)$/, ([, r, id]) => {
       const w = db.workflows.find((x) => x.id === Number(id) && x.repo === r);
       if (!w) throw notFound(`workflow ${id}`);
-      return { id: w.id };
+      return { id: w.id, path: w.path };
     }],
     ['GET', /^repos\/[^/]+\/([^/]+)\/actions\/workflows\/(\d+)\/runs$/, ([, r, id], { query }) => {
       const runs = runsWhere((x) => x.workflow.repo === r && x.workflow.id === Number(id), query);
@@ -322,7 +364,7 @@ export function createDemoApi(owner) {
       const created = Date.now();
       const started = {
         id: db.nextRun(), workflow: w, run_number: db.runs.filter((x) => x.workflow === w).length + 1, event: 'workflow_dispatch', status: 'queued', conclusion: null,
-        head_branch: body.ref, head_sha: db.history[r][0].sha, created, minutes: 6, actor: ME, commit: db.history[r][0], approvals: [], pending: [],
+        head_branch: body.ref, inputs: body.inputs || {}, head_sha: db.history[r][0].sha, created, minutes: 6, actor: ME, commit: db.history[r][0], approvals: [], pending: [],
       };
       db.runs.push(started);
       // It starts after a few seconds and passes half a minute later, unless it's canceled first.
@@ -380,7 +422,7 @@ export function createDemoApi(owner) {
     if (/\/contents\//.test(path)) {
       if (/\.github\/pull_request_template\.md$/.test(path)) return '## What\n\n## Why\n\n## How to test\n';
       const [, r, file] = /^repos\/[^/]+\/([^/]+)\/contents\/(.+)$/.exec(path) || [];
-      const text = r && DEMO_GITHUB_FILES[r]?.[decodeURIComponent(file)];
+      const text = r && (WORKFLOW_FILES[r]?.[decodeURIComponent(file)] ?? DEMO_GITHUB_FILES[r]?.[decodeURIComponent(file)]);
       if (text !== undefined) return text;
       throw notFound(path);
     }

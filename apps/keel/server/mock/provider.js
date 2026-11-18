@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { stageSummary } from '../domain/releases.js';
 import { stagesOf } from '../domain/pipelines.js';
+import { pipelineParameters } from '../domain/parameters.js';
 import { demoFile } from './files.js';
 import { DEMO_FILES } from './advisories.js';
 import { demoSecuritySettings } from './security.js';
@@ -364,6 +365,34 @@ for (let i = 0; i < 140; i++) {
 }
 
 // --------------------------------------------------------------------- builds
+// The YAML the demo's CI pipelines run, for their runtime parameters (nightly ones have none).
+const CI_YAML = `parameters:
+  - name: environment
+    displayName: Deploy to
+    type: string
+    default: qa
+    values: [qa, staging, uat, production]
+  - name: runTests
+    displayName: Run the tests
+    type: boolean
+    default: true
+  - name: logLevel
+    displayName: Log level
+    type: string
+    default: info
+    values: [error, warn, info, debug, trace]
+  - name: retries
+    displayName: Retries for flaky tests
+    type: number
+    default: 2
+  - name: buildSteps
+    type: stepList
+    default: []
+stages:
+  - stage: Build
+  - stage: Test
+  - stage: DeploytoQA
+`;
 const builds = [];
 let nextBuild = 20500;
 const definitions = ALL_REPOS.flatMap((r, i) => [
@@ -1468,11 +1497,16 @@ export function createMockProvider() {
       return delay(latest ? stagesOf(demoTimeline(latest)) : []);
     },
 
-    async queueBuild(projectId, definitionId, branch, { skipStages = [] } = {}) {
+    listPipelineParameters(projectId, definitionId) {
+      const def = definitions.find((d) => d.id === Number(definitionId));
+      return delay(def && !def.nightly ? pipelineParameters(CI_YAML) : []);
+    },
+
+    async queueBuild(projectId, definitionId, branch, { skipStages = [], parameters = {} } = {}) {
       const prev = builds.find((b) => b.definition.id === definitionId);
       if (!prev) throw notFound('Pipeline');
       const b = {
-        ...prev, id: nextBuild++, status: 'notStarted', result: null, reason: 'manual', sourceBranch: branch || prev.sourceBranch, skipStages,
+        ...prev, id: nextBuild++, status: 'notStarted', result: null, reason: 'manual', sourceBranch: branch || prev.sourceBranch, skipStages, parameters,
         requestedFor: ME, queuedAt: iso(Date.now()), startedAt: null, finishedAt: null, buildNumber: `manual.${nextBuild}`,
       };
       builds.unshift(b);

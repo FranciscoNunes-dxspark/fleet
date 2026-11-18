@@ -50,6 +50,8 @@ export default {
   'Run on a branch': 'Correr numa branch',
   'Stages to run': 'Fases a correr',
   'Pick at least one stage to run.': 'Escolha pelo menos uma fase para correr.',
+  Parameters: 'Parâmetros',
+  '{value} (default)': '{value} (predefinido)',
   'Run queued on {branch}, skipping {n} stages': 'Execução em fila na {branch}, sem {n} fases',
   'Keel starts one run now, as you, on the branch you pick.': 'O Keel inicia já uma execução, como você, na branch que escolher.',
   'Run at a set time': 'Correr a uma hora marcada',

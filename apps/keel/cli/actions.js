@@ -1,7 +1,8 @@
 // Every user-facing operation, written once: keys in the views and slash commands both call
 // these with `ctx` (built in ui/App.jsx). Questions before anything that can't be undone live here.
 import { sonarArgs } from './sonar.js';
-import { branch, diffText, isGithubPr, summaryText, summaryWeek } from './format.js';
+import { branch, diffText, isGithubPr, parametersText, summaryText, summaryWeek } from './format.js';
+import { parameterValues } from '../server/domain/parameters.js';
 import { fieldValues, filterFields, splitFilter, withField } from './filters.js';
 import { approvalsFor, deployChoices, downloadChoices, isGithubRelease, stageStatus } from './releases.js';
 import { runText } from './runs.js';
@@ -158,15 +159,22 @@ export async function comment(ctx, pr = ctx.current().pr, text = '') {
 }
 
 /**
- * /run's words: the branch, and the stages to leave out, each after a minus (`/run main -Deploy`),
- * matched to the pipeline's stages by their YAML or display name, any case, spaces and dashes ignored.
+ * /run's words: the branch, the stages to leave out, each after a minus (`/run main -Deploy`),
+ * matched to the pipeline's stages by their YAML or display name, any case, spaces and dashes
+ * ignored, and the parameters, each as name=value (`environment=staging`, `note="two words"`).
  */
 export function runArgs(text = '', stages = []) {
   const key = (s) => String(s).toLowerCase().replace(/[^a-z0-9]/g, '');
   const skip = [];
   const unknown = [];
+  const params = {};
   let on = '';
-  for (const w of text.trim().split(/\s+/).filter(Boolean)) {
+  for (const [w] of text.trim().matchAll(/[^\s=]+=(?:"[^"]*"|'[^']*'|\S*)|\S+/g)) {
+    const eq = /^([^\s=-][^\s=]*)=(.*)$/s.exec(w);
+    if (eq) {
+      params[eq[1]] = eq[2].replace(/^(["'])(.*)\1$/s, '$2');
+      continue;
+    }
     // Git refuses branch names that start with a dash, so a dash always means a stage.
     if (!w.startsWith('-')) {
       on ||= w;
@@ -177,35 +185,62 @@ export function runArgs(text = '', stages = []) {
       if (!skip.includes(s.id)) skip.push(s.id);
     } else unknown.push(w.slice(1));
   }
-  return { branch: on, skip, unknown };
+  return { branch: on, skip, unknown, params };
+}
+
+/** A pipeline's parameters on a branch ([] when the service can't say). */
+function parametersOf(ctx, row, on) {
+  return ctx.service?.pipelineParameters ? ctx.service.pipelineParameters(row.projectId, row.definition.id, on || undefined).catch(() => []) : Promise.resolve([]);
 }
 
 export async function runPipeline(ctx, row = ctx.current().pipeline, text = '') {
   if (!row) return ctx.note('Pick a pipeline first.', 'error');
   const stages = ctx.service?.pipelineStages ? await ctx.service.pipelineStages(row.projectId, row.definition.id).catch(() => []) : [];
-  const { branch: picked, skip, unknown } = runArgs(text, stages);
+  const { branch: picked, skip, unknown, params: given } = runArgs(text, stages);
   if (unknown.length) {
     const names = stages.map((s) => s.name).join(', ');
     return ctx.note(`${row.definition.name} has no stage ${unknown.map((u) => `"${u}"`).join(' or ')}. ${names ? `Its stages: ${names}.` : 'It has no stages to leave out.'}`, 'error');
   }
   if (stages.length && skip.length >= stages.length) return ctx.note('Pick at least one stage to run.', 'error');
   const on = picked || branch(row.branch) || '';
+  const params = await parametersOf(ctx, row, on);
+  let values;
+  try {
+    values = parameterValues(params, given);
+  } catch (err) {
+    return ctx.note(`${err.message} /params lists every option.`, 'error');
+  }
   const running = stages.filter((s) => !skip.includes(s.id)).map((s) => s.name);
   const skipping = stages.filter((s) => skip.includes(s.id)).map((s) => s.name);
+  const set = Object.entries(values).map(([k, v]) => `${k}=${v}`);
+  const detail = [
+    stages.length ? `Stages: ${running.join(', ')}.${skipping.length ? '' : ` Leave one out with /run ${on || '<branch>'} -<stage>.`}` : '',
+    params.length ? `${set.length ? `Parameters: ${set.join(', ')}; the rest` : 'Parameters'} as the pipeline sets them (/params lists every option).` : '',
+  ].filter(Boolean).join(' ');
   const ok = await ask(ctx, deploys(row, ctx.data.production?.monitors) || [], {
     title: `Run ${row.definition.name}${on ? ` on ${on}` : ''}${skipping.length ? `, skipping ${skipping.join(', ')}` : ''}?`,
-    detail: stages.length
-      ? `Stages: ${running.join(', ')}.${skipping.length ? '' : ` Leave one out with /run ${on || '<branch>'} -<stage>.`}`
-      : undefined,
+    detail: detail || undefined,
     options: [{ label: 'Yes, run it', value: true }, { label: 'No', value: false }],
   });
   if (!ok) return;
   await ctx.task(`Run ${row.definition.name}${on ? ` on ${on}` : ''}`, async () => {
-    const run = await ctx.service.queueBuild(row.projectId, row.definition.id, on || undefined, skip.length ? { skipStages: skip } : undefined);
-    did(ctx, `Ran ${row.definition.name}${on ? ` on ${on}` : ''}${skipping.length ? ` without ${skipping.join(', ')}` : ''}${run?.id ? ` (run ${run.id})` : ''}`, 'pipeline');
+    const options = { ...(skip.length ? { skipStages: skip } : {}), ...(set.length ? { parameters: values } : {}) };
+    const run = await ctx.service.queueBuild(row.projectId, row.definition.id, on || undefined, Object.keys(options).length ? options : undefined);
+    did(ctx, `Ran ${row.definition.name}${on ? ` on ${on}` : ''}${skipping.length ? ` without ${skipping.join(', ')}` : ''}${set.length ? ` with ${set.join(', ')}` : ''}${run?.id ? ` (run ${run.id})` : ''}`, 'pipeline');
     await ctx.reload();
     return [`${run?.id ? `Queued run ${run.id}` : 'Queued'}. It shows under Latest runs once Azure DevOps starts it.`];
   }, { label: 'Queuing' });
+}
+
+/** /params: the parameters a run of the pipeline can set on a branch (its own by default), each with every option it takes. */
+export async function showParameters(ctx, row = ctx.current().pipeline, text = '') {
+  if (!row) return ctx.note('Pick a pipeline first.', 'error');
+  const on = text.trim() || branch(row.branch) || '';
+  await ctx.task(`Parameters of ${row.definition.name}`, async () => {
+    const params = await ctx.service.pipelineParameters(row.projectId, row.definition.id, on || undefined);
+    ctx.showText(`${row.definition.name}: parameters${on ? ` on ${on}` : ''}`, parametersText(params, on));
+    return [params.length ? `${params.length} parameter${params.length === 1 ? '' : 's'}.` : 'No parameters.'];
+  }, { label: 'Reading its YAML' });
 }
 
 export async function cancelRun(ctx, row = ctx.current().pipeline) {

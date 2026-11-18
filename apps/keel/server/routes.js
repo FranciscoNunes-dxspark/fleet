@@ -221,6 +221,7 @@ export function apiRouter({ channels = null, push = null, schedules = null } = {
   r.get('/epics/pace', async (req, res) => res.json(await req.ctx.service.forecastPace(90)));
   r.get('/pipelines', async (req, res) => res.json(await req.ctx.service.pipelines()));
   r.get('/pipelines/:projectId/:definitionId/stages', async (req, res) => res.json(await req.ctx.service.pipelineStages(req.params.projectId, req.params.definitionId)));
+  r.get('/pipelines/:projectId/:definitionId/parameters', async (req, res) => res.json(await req.ctx.service.pipelineParameters(req.params.projectId, req.params.definitionId, req.query.branch ? String(req.query.branch) : undefined)));
   r.get('/pipelines/:projectId/:definitionId/runs', async (req, res) => res.json(await req.ctx.service.pipelineRuns(req.params.projectId, req.params.definitionId)));
   r.get('/commits/:hash/carriers', async (req, res) => res.json(await req.ctx.service.commitUsage(req.params.hash, { repo: req.query.repo ? String(req.query.repo) : undefined })));
   r.get('/builds/:projectId/:buildId', async (req, res) => res.json(await req.ctx.service.runDetails(req.params.projectId, req.params.buildId)));
@@ -230,8 +231,12 @@ export function apiRouter({ channels = null, push = null, schedules = null } = {
     res.json(await req.ctx.service.cancelBuild(String(projectId || ''), num(buildId)));
   });
   r.post('/pipelines/queue', need('pipelines.run'), async (req, res) => {
-    const { projectId, definitionId, branch, skipStages } = req.body || {};
-    res.json(await req.ctx.service.queueBuild(projectId, num(definitionId), branch, { skipStages: Array.isArray(skipStages) ? skipStages.filter((x) => typeof x === 'string') : undefined }));
+    const { projectId, definitionId, branch, skipStages, parameters } = req.body || {};
+    // Parameters arrive as text: { name: value }, anything else left out.
+    const values = parameters && typeof parameters === 'object' && !Array.isArray(parameters)
+      ? Object.fromEntries(Object.entries(parameters).filter(([, v]) => ['string', 'number', 'boolean'].includes(typeof v)).map(([k, v]) => [k, String(v)]))
+      : undefined;
+    res.json(await req.ctx.service.queueBuild(projectId, num(definitionId), branch, { skipStages: Array.isArray(skipStages) ? skipStages.filter((x) => typeof x === 'string') : undefined, parameters: values }));
   });
 
   // The advisory watch's findings per tracked repository, and reading one again now (once per 10 minutes).
