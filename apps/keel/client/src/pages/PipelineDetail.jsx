@@ -84,9 +84,9 @@ export default function PipelineDetail({ target }) {
   }));
 
   // Run once at a set time (server/schedules.js), as you.
-  const scheduleRun = async ({ branch: on, at }) => {
+  const scheduleRun = async ({ branch: on, at, parameters = {} }) => {
     try {
-      await api('/pipelines/schedule', { method: 'POST', body: { projectId, definitionId: Number(definitionId), branch: on, at } });
+      await api('/pipelines/schedule', { method: 'POST', body: { projectId, definitionId: Number(definitionId), branch: on, at, ...(Object.keys(parameters).length ? { parameters } : {}) } });
       toast(t('{name} will run on {branch} {when}', { name, branch: on, when: dateTime(at) }));
       setScheduling(false);
       refresh();
@@ -163,11 +163,13 @@ export default function PipelineDetail({ target }) {
                 {s.status === 'scheduled' ? (
                   <span>
                     {tj('{when} on {branch}', { when: <strong>{dateTimeZone(s.at)}</strong>, branch: <code className="branch">{s.branch}</code> })}
+                    <ScheduledParameters values={s.parameters} />
                     {s.ownerName && <span className="muted small"> · {t('by {name}', { name: s.ownerName })}</span>}
                   </span>
                 ) : s.status === 'done' ? (
                   <span className="muted">
                     {tj('Started {when} on {branch}', { when: dateTime(s.finishedAt || s.at), branch: <code className="branch">{s.branch}</code> })}
+                    <ScheduledParameters values={s.parameters} />
                     {s.run?.webUrl && <> · <a href={s.run.webUrl} target="_blank" rel="noreferrer noopener">{t('View the run')}</a></>}
                   </span>
                 ) : (
@@ -181,7 +183,7 @@ export default function PipelineDetail({ target }) {
       )}
 
       {runningOn && <ScheduleRunForm now projectId={projectId} definitionId={definitionId} repoId={p?.repoId} branch={branch} onCancel={() => setRunningOn(false)} onSchedule={async ({ branch: on, skipStages, parameters }) => { await queueOn(on, skipStages, parameters); setRunningOn(false); }} />}
-      {scheduling && <ScheduleRunForm projectId={projectId} repoId={p?.repoId} branch={branch} onCancel={() => setScheduling(false)} onSchedule={scheduleRun} />}
+      {scheduling && <ScheduleRunForm projectId={projectId} definitionId={definitionId} repoId={p?.repoId} branch={branch} onCancel={() => setScheduling(false)} onSchedule={scheduleRun} />}
 
       <section className="detail-section">
         <h3>{t('Recent runs')}</h3>
@@ -235,7 +237,7 @@ export default function PipelineDetail({ target }) {
 
 /**
  * Run once at a set time: the branch (the pipeline's own by default) and when. Run now
- * (`now`) also offers the pipeline's stages, all ticked, to leave some out of the run, and its
+ * (`now`) also offers the pipeline's stages, all ticked, to leave some out of the run. Both offer its
  * parameters, as its YAML has them on that branch, each with every option it takes.
  */
 function ScheduleRunForm({ projectId, definitionId, repoId, branch: home, now, onCancel, onSchedule }) {
@@ -243,7 +245,7 @@ function ScheduleRunForm({ projectId, definitionId, repoId, branch: home, now, o
   const [branch, setBranch] = useState(home || '');
   // Parameters are read from the branch's YAML once the branch is settled (on leaving the field), not on every key.
   const [paramsOn, setParamsOn] = useState(home || '');
-  const { data: params } = useApi(now && definitionId ? `/pipelines/${encodeURIComponent(projectId)}/${encodeURIComponent(definitionId)}/parameters${paramsOn ? `?branch=${encodeURIComponent(paramsOn)}` : ''}` : null);
+  const { data: params } = useApi(definitionId ? `/pipelines/${encodeURIComponent(projectId)}/${encodeURIComponent(definitionId)}/parameters${paramsOn ? `?branch=${encodeURIComponent(paramsOn)}` : ''}` : null);
   const [values, setValues] = useState({});
   const valueOf = (p) => values[p.name] ?? p.default ?? '';
   const setValue = (name, v) => setValues((prev) => ({ ...prev, [name]: v }));
@@ -281,7 +283,7 @@ function ScheduleRunForm({ projectId, definitionId, repoId, branch: home, now, o
     e.preventDefault();
     setBusy(true);
     const parameters = JSON.parse(chosen);
-    await onSchedule({ branch: branch.trim(), at: now ? undefined : new Date(at).toISOString(), skipStages: now ? skipping : [], parameters: now ? parameters : {} });
+    await onSchedule({ branch: branch.trim(), at: now ? undefined : new Date(at).toISOString(), skipStages: now ? skipping : [], parameters });
     setBusy(false);
   };
   return (
@@ -301,7 +303,7 @@ function ScheduleRunForm({ projectId, definitionId, repoId, branch: home, now, o
           {noneLeft && <span className="text-warn small">{t('Pick at least one stage to run.')}</span>}
         </fieldset>
       )}
-      {now && params?.length > 0 && (
+      {params?.length > 0 && (
         <fieldset className="field run-params">
           <legend>{t('Parameters')}</legend>
           {params.map((p) => <RunParameter key={p.name} p={p} value={valueOf(p)} onChange={(v) => setValue(p.name, v)} />)}
@@ -312,11 +314,18 @@ function ScheduleRunForm({ projectId, definitionId, repoId, branch: home, now, o
         {localZone() && <span className="muted small" id="run-at-zone">{t('{zone} time', { zone: localZone() })}</span>}
       </label>}
       <div className="complete-actions">
-        <Button size="1" variant="solid" type="submit" disabled={busy || !branch.trim() || (!now && !at) || noneLeft || (now && missing)}>{now ? (busy ? t('Starting…') : t('Run')) : busy ? t('Scheduling…') : t('Schedule run')}</Button>
+        <Button size="1" variant="solid" type="submit" disabled={busy || !branch.trim() || (!now && !at) || noneLeft || missing}>{now ? (busy ? t('Starting…') : t('Run')) : busy ? t('Scheduling…') : t('Schedule run')}</Button>
         <Button size="1" variant="ghost" color="gray" type="button" onClick={onCancel}>{t('Cancel')}</Button>
       </div>
     </form>
   );
+}
+
+/** The parameters a scheduled run was given (only those changed from their defaults), after its branch. */
+function ScheduledParameters({ values }) {
+  const set = Object.entries(values || {});
+  if (!set.length) return null;
+  return <> {tj('with {parameters}', { parameters: set.map(([k, v], i) => <span key={k}>{i ? ', ' : ''}<code>{k}={v}</code></span>) })}</>;
 }
 
 /**

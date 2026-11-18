@@ -236,7 +236,7 @@ function PipelineRow({ p, showFolder, onQueue, onCancel, scheduled = false, onCa
         <div className="chips">
           {run && <Chip tone={queued ? 'muted' : 'info'}>{t(queued ? 'Queued' : 'Running')}</Chip>}
           {p.scheduledRuns?.length > 0 && (
-            <Chip tone="info" title={p.scheduledRuns.map((s) => `${dateTimeZone(s.at)} · ${s.branch}`).join('\n')}>
+            <Chip tone="info" title={p.scheduledRuns.map((s) => [dateTimeZone(s.at), s.branch, ...Object.entries(s.parameters || {}).map(([k, v]) => `${k}=${v}`)].join(' · ')).join('\n')}>
               {t('Runs {when}', { when: dateTime(p.scheduledRuns[0].at) })}{p.scheduledRuns.length > 1 ? ` +${p.scheduledRuns.length - 1}` : ''}
             </Chip>
           )}
