@@ -426,4 +426,11 @@ export default {
   'agent queues': 'filas de agentes',
   'pipeline permissions': 'permissões de pipeline',
   'the agents of {pool}': 'os agentes de {pool}',
+  // Resolving conflicts (domain/conflicts.js, service.resolveConflict)
+  'Keel can\'t resolve a rename or folder conflict. Fix it on your computer or in Azure DevOps.': 'O Keel não resolve um conflito de nome ou de pastas. Resolva-o no seu computador ou no Azure DevOps.',
+  'This conflict has no merged text to write: keep one branch\'s side.': 'Este conflito não tem texto combinado para escrever: mantenha o lado de um dos branches.',
+  'The merged text still has conflict markers (<<<<<<<, =======, >>>>>>>). Settle each one first.': 'O texto combinado ainda tem marcadores de conflito (<<<<<<<, =======, >>>>>>>). Resolva cada um primeiro.',
+  'Say which side to keep, or give the merged text.': 'Diga que lado manter, ou indique o texto combinado.',
+  'That conflict isn\'t on the pull request any more. It may have been fixed by a push.': 'Esse conflito já não está no pull request. Pode ter sido resolvido por um push.',
+  'GitHub doesn\'t list a pull request\'s conflicts. Resolve them on GitHub or on your computer.': 'O GitHub não lista os conflitos de um pull request. Resolva-os no GitHub ou no seu computador.',
 };

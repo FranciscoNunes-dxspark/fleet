@@ -869,7 +869,7 @@ function asOfView(w, t) {
 const strip = ({ _description, _acceptance, _comments, _prs, _board, _attachments, _iterations, ...rest }) => ({ ...rest });
 // Team members taken out of a team ("projectId:teamId:memberId"), until the server restarts.
 const removedMembers = new Set();
-const stripPR = ({ _workItemIds, _threads, _buildOk, _files, _description, ...rest }) => ({ ...rest, reviewers: rest.reviewers.map((r) => ({ ...r })) });
+const stripPR = ({ _workItemIds, _threads, _buildOk, _files, _description, _conflicts, ...rest }) => ({ ...rest, reviewers: rest.reviewers.map((r) => ({ ...r })) });
 // A made-up source file for the demo, and the same file after a change: the diff views have something to show.
 function demoSource(path, kind) {
   const name = path.split('/').pop().replace(/\.\w+$/, '').replace(/\W/g, '') || 'demo';
@@ -885,6 +885,37 @@ function demoSource(path, kind) {
   after.splice(6, 1, '    total += item.price * item.qty * (1 - (item.discount ?? 0));');
   after.splice(4, 0, '  if (!items.length) return 0;');
   return { before: kind === 'added' ? '' : before.join('\n'), after: kind === 'deleted' ? '' : after.join('\n') };
+}
+
+// A conflicted demo pull request's conflicts, made once so resolving one sticks until restart.
+function demoConflicts(pr) {
+  if (pr.mergeStatus !== 'conflicts' && !pr._conflicts) return [];
+  if (!pr._conflicts) {
+    const kinds = ['editEdit', 'deleteEdit', 'addAdd', 'editEdit'];
+    const files = pr._files.length ? pr._files : [{ path: '/src/app.ts' }];
+    // Some get a rename too, the kind Keel leaves to Azure DevOps or the person's computer.
+    pr._conflicts = files.slice(0, Math.min(3, files.length)).map((f, i) => ({
+      id: i + 1, path: f.path, type: i === 2 && pr.id % 3 === 2 ? 'renameRename' : kinds[(pr.id + i) % kinds.length], status: 'unresolved',
+    }));
+  }
+  return pr._conflicts;
+}
+
+// A demo conflict's three versions: the source branch's is the demo change, and the target
+// changed the same loop line another way (the conflict) and the header comment (merges cleanly).
+function conflictSides(c) {
+  const { before, after } = demoSource(c.path, 'edited');
+  const target = before.split('\n');
+  target.splice(0, 1, `// ${c.path} (kept in sync with the pricing service)`);
+  target.splice(6, 1, '    total += Math.round(item.price * 100) * item.qty / 100;');
+  const theirs = target.join('\n');
+  switch (c.type) {
+    case 'addAdd': return { base: '', source: after, target: theirs };
+    case 'deleteEdit': return { base: before, source: '', target: theirs };
+    case 'editDelete': return { base: before, source: after, target: '' };
+    case 'editEdit': return { base: before, source: after, target: theirs };
+    default: return { base: '', source: '', target: '' };
+  }
 }
 
 const delay = (v) => new Promise((r) => setTimeout(() => r(v), 40 + Math.random() * 120));
@@ -1226,17 +1257,27 @@ export function createMockProvider() {
 
     async listPullRequestConflicts(projectId, repoId, prId) {
       const pr = getPR(projectId, repoId, prId);
-      if (pr.mergeStatus !== 'conflicts') return delay([]);
-      const kinds = ['editEdit', 'editEdit', 'deleteEdit', 'addAdd', 'renameRename'];
-      const files = pr._files.length ? pr._files : [{ path: '/src/app.ts' }];
-      return delay(files.slice(0, Math.min(3, files.length)).map((f, i) => ({
-        id: i + 1, path: f.path, type: kinds[(pr.id + i) % kinds.length], status: 'unresolved',
-      })));
+      return delay(demoConflicts(pr).map(({ id, path, type, status }) => ({ id, path, type, status })));
+    },
+
+    async getPullRequestConflict(projectId, repoId, prId, conflictId) {
+      const c = demoConflicts(getPR(projectId, repoId, prId)).find((x) => x.id === Number(conflictId));
+      if (!c) throw notFound(`Conflict ${conflictId}`);
+      return delay({ ...c, ...conflictSides(c) });
+    },
+
+    async resolvePullRequestConflict(projectId, repoId, prId, conflictId) {
+      const pr = getPR(projectId, repoId, prId);
+      const c = demoConflicts(pr).find((x) => x.id === Number(conflictId));
+      if (!c) throw notFound(`Conflict ${conflictId}`);
+      c.status = 'resolved';
+      return delay();
     },
 
     async restartMerge(projectId, repoId, prId) {
       const pr = getPR(projectId, repoId, prId);
-      const after = pr.mergeStatus === 'conflicts' ? 'conflicts' : 'succeeded';
+      // Once every conflict is resolved, the next merge goes through.
+      const after = pr.mergeStatus === 'conflicts' && demoConflicts(pr).some((c) => c.status !== 'resolved') ? 'conflicts' : 'succeeded';
       pr.mergeStatus = 'queued';
       setTimeout(() => { pr.mergeStatus = after; }, 4000).unref?.();
       return delay();

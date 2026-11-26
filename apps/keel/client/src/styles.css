@@ -1196,6 +1196,9 @@ a.stage:hover { text-decoration: none; border-color: var(--line-strong); }
 .conflict-list li { display: grid; gap: 1px; padding-left: 10px; border-left: 3px solid var(--bad); }
 .conflict-list li.resolved { border-left-color: var(--ok); }
 .conflict-path { overflow-wrap: anywhere; color: var(--ink); }
+.conflict-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; }
+.conflict-editor { display: grid; gap: 6px; margin-top: 6px; }
+.conflict-editor textarea { min-height: 160px; font-family: var(--mono); font-size: var(--text-sm); line-height: 1.5; white-space: pre; overflow-wrap: normal; overflow-x: auto; tab-size: 4; }
 .conflict-fix { margin: 6px 0 10px; }
 .conflict-fix summary { cursor: pointer; color: var(--accent-ink); }
 .code-block { margin: 6px 0; padding: 8px 10px; background: var(--bg); border: 1px solid var(--line); border-radius: var(--radius-sm); font-family: var(--mono); white-space: pre; overflow-x: auto; }

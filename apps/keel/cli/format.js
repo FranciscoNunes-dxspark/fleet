@@ -609,3 +609,26 @@ export function parametersText(params, on = '') {
   lines.push(`Set them with /run ${on || '<branch>'} ${example} (quote a value with spaces: name="two words").`);
   return lines.join('\n');
 }
+
+// Azure DevOps conflict kinds, as the web app's MergeStatus.jsx names them.
+const CONFLICT_KIND = {
+  editEdit: 'edited in both branches', addAdd: 'added in both branches',
+  deleteEdit: 'deleted here, edited in the target', editDelete: 'edited here, deleted in the target',
+  addRename: 'added here, renamed in the target', deleteRename: 'deleted here, renamed in the target',
+  renameAdd: 'renamed here, added in the target', renameDelete: 'renamed here, deleted in the target',
+  renameRename: 'renamed differently in each branch', rename1to2: 'renamed to two different names',
+  rename2to1: 'two files renamed to the same name', fileDirectory: 'a file here, a folder in the target',
+  directoryFile: 'a folder here, a file in the target', directoryChild: 'folder conflict',
+};
+const KEEPABLE = new Set(['editEdit', 'addAdd', 'deleteEdit', 'editDelete']);
+
+/** /conflicts: a pull request's merge conflicts, each with the number /resolve takes. */
+export function conflictLines(pr, conflicts) {
+  if (!conflicts.length) return ['Azure DevOps didn\'t list the files. o opens the pull request there.'];
+  const left = conflicts.filter((c) => c.status !== 'resolved').length;
+  return [
+    `${left} of ${conflicts.length} unresolved, merging ${branch(pr.sourceBranch)} into ${branch(pr.targetBranch)}:`,
+    ...conflicts.map((c) => `  #${c.id}  ${c.path.replace(/^\//, '')} · ${CONFLICT_KIND[c.type] ?? 'conflict'}${c.status === 'resolved' ? ' · resolved' : KEEPABLE.has(c.type) ? '' : ' · fix it on your computer'}`),
+    ...(left ? ['', `/resolve <#> source keeps ${branch(pr.sourceBranch)}'s side, /resolve <#> target keeps ${branch(pr.targetBranch)}'s; the web app edits a merged file by hand.`] : []),
+  ];
+}

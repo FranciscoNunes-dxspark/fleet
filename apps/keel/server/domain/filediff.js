@@ -14,7 +14,7 @@ const splitLines = (text) => {
 };
 
 /** Edit script between two line arrays: [{ t: ' ' | '-' | '+', text }], or null when it needs too many edits. */
-function editScript(a, b) {
+export function editScript(a, b) {
   let start = 0;
   while (start < a.length && start < b.length && a[start] === b[start]) start++;
   let endA = a.length;

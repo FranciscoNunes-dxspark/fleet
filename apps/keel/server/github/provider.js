@@ -402,6 +402,14 @@ export function createGithubProvider({ org, token, client } = {}) {
       return [];
     },
 
+    async getPullRequestConflict() {
+      throw err('GitHub doesn\'t list a pull request\'s conflicts. Resolve them on GitHub or on your computer.');
+    },
+
+    async resolvePullRequestConflict() {
+      throw err('GitHub doesn\'t list a pull request\'s conflicts. Resolve them on GitHub or on your computer.');
+    },
+
     async restartMerge() {
       throw err('GitHub checks merges again by itself after each push.');
     },
