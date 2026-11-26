@@ -75,27 +75,29 @@ function matchesOf(base, side) {
 const same = (a, b) => a.length === b.length && a.every((x, i) => x === b[i]);
 
 /**
- * A three-way merge, line by line (diff3's way): between the base lines both branches kept, a
- * stretch only one branch changed takes that change, and one both changed differently is
- * written between markers, the source branch's side first. Returns { text, conflicts }, the
- * number of marked places; a diff too big to work out marks the whole file as one.
+ * A three-way merge, line by line (diff3's way), as blocks: between the base lines both branches
+ * kept, a stretch only one branch changed takes that change ({ same: lines }), and one both
+ * changed differently is a conflict ({ base, source, target }, each its lines). A diff too big to
+ * work out makes the whole file one conflict.
  */
-export function mergeWithMarkers(baseText, sourceText, targetText, { source = 'source', target = 'target' } = {}) {
+export function mergeChunks(baseText, sourceText, targetText) {
   const base = linesOf(baseText);
   const a = linesOf(sourceText);
   const b = linesOf(targetText);
-  const out = [];
-  let conflicts = 0;
-  const conflict = (x, y) => {
-    conflicts++;
-    out.push(`<<<<<<< ${source}`, ...x, '=======', ...y, `>>>>>>> ${target}`);
+  const chunks = [];
+  const keep = (lines) => {
+    if (!lines.length) return;
+    const last = chunks.at(-1);
+    if (last?.same) last.same.push(...lines);
+    else chunks.push({ same: [...lines] });
   };
+  const clash = (O, A, B) => chunks.push({ base: O, source: A, target: B });
   const ma = matchesOf(base, a);
   const mb = matchesOf(base, b);
   if (!ma || !mb) {
-    if (same(a, b)) out.push(...a);
-    else conflict(a, b);
-    return { text: out.length ? `${out.join('\n')}\n` : '', conflicts };
+    if (same(a, b)) keep(a);
+    else clash(base, a, b);
+    return chunks;
   }
   let o = 0;
   let i = 0;
@@ -109,14 +111,21 @@ export function mergeWithMarkers(baseText, sourceText, targetText, { source = 's
     const O = base.slice(o, k);
     const A = a.slice(i, endA);
     const B = b.slice(j, endB);
-    if (same(A, O)) out.push(...B);
-    else if (same(B, O) || same(A, B)) out.push(...A);
-    else conflict(A, B);
+    if (same(A, O)) keep(B);
+    else if (same(B, O) || same(A, B)) keep(A);
+    else clash(O, A, B);
     if (k >= base.length) break;
-    out.push(base[k]);
+    keep([base[k]]);
     o = k + 1;
     i = endA + 1;
     j = endB + 1;
   }
-  return { text: out.length ? `${out.join('\n')}\n` : '', conflicts };
+  return chunks;
+}
+
+/** The merged file as text, each conflict between markers with the source branch's side first: { text, conflicts }. */
+export function mergeWithMarkers(baseText, sourceText, targetText, { source = 'source', target = 'target' } = {}) {
+  const chunks = mergeChunks(baseText, sourceText, targetText);
+  const out = chunks.flatMap((c) => (c.same ? c.same : [`<<<<<<< ${source}`, ...c.source, '=======', ...c.target, `>>>>>>> ${target}`]));
+  return { text: out.length ? `${out.join('\n')}\n` : '', conflicts: chunks.filter((c) => !c.same).length, chunks };
 }

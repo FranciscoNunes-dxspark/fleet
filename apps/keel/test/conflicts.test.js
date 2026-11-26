@@ -10,6 +10,7 @@ const realFetch = globalThis.fetch;
 afterEach(() => { globalThis.fetch = realFetch; });
 
 const json = (status, body) => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
+const pick = ({ text, conflicts }) => ({ text, conflicts });
 const memoryStore = () => {
   let current = { ...structuredClone(DEFAULT_SETTINGS), projects: { 'p-commerce': { name: 'Commerce', tracked: true, repos: 'all', teams: [] } } };
   return { load: async () => current, save: async (patch) => (current = { ...current, ...patch }) };
@@ -94,8 +95,8 @@ test('three-way merge: one-sided changes merge, overlapping ones are marked', ()
   assert.equal(text, 'A\nb\n<<<<<<< feature\nc\nd2\n=======\nC\nd3\n>>>>>>> main\ne\nf\n');
   assert.ok(hasMarkers(text));
   // Both branches making the same change isn't a conflict.
-  assert.deepEqual(mergeWithMarkers(base, source, source), { text: source, conflicts: 0 });
-  assert.deepEqual(mergeWithMarkers(base, 'a\nb2\nc\nd\ne\n', 'a\nb\nc\nd\ne2\n'), { text: 'a\nb2\nc\nd\ne2\n', conflicts: 0 });
+  assert.deepEqual(pick(mergeWithMarkers(base, source, source)), { text: source, conflicts: 0 });
+  assert.deepEqual(pick(mergeWithMarkers(base, 'a\nb2\nc\nd\ne\n', 'a\nb\nc\nd\ne2\n')), { text: 'a\nb2\nc\nd\ne2\n', conflicts: 0 });
   // Added on both sides with nothing in common: one conflict, the whole file.
   assert.equal(mergeWithMarkers('', 'x\n', 'y\n').conflicts, 1);
 });
@@ -124,11 +125,12 @@ test('demo organization: resolve each conflict, and the merge runs again once no
   const { pr, conflicts } = clean;
   const editable = conflicts.find((c) => c.type === 'editEdit');
   const one = await service.pullRequestConflict(pr.projectId, pr.repoId, pr.id, editable.id);
-  assert.equal(one.merged.conflicts, 1);
+  assert.equal(one.merged.conflicts, 2);
+  assert.equal(one.merged.chunks.filter((x) => !x.same).length, 2);
   assert.match(one.merged.text, new RegExp(`<<<<<<< ${pr.sourceBranch}\n`));
   assert.match(one.merged.text, /kept in sync with the pricing service/, 'the target\'s one-sided change is merged');
   await assert.rejects(service.resolveConflict(pr.projectId, pr.repoId, pr.id, editable.id, { content: one.merged.text }), /markers/);
-  const settled = one.merged.text.replace(/<<<<<<< .*\n([\s\S]*?)=======\n[\s\S]*?>>>>>>> .*\n/, '$1');
+  const settled = one.merged.text.replace(/<<<<<<< .*\n([\s\S]*?)=======\n[\s\S]*?>>>>>>> .*\n/g, '$1');
   let last = await service.resolveConflict(pr.projectId, pr.repoId, pr.id, editable.id, { content: settled });
   assert.equal(last.merging, last.left === 0);
   for (const c of conflicts.filter((x) => x.id !== editable.id)) last = await service.resolveConflict(pr.projectId, pr.repoId, pr.id, c.id, { keep: 'target' });
@@ -142,4 +144,26 @@ test('demo organization: resolve each conflict, and the merge runs again once no
     else await assert.rejects(service.resolveConflict(w.pr.projectId, w.pr.repoId, w.pr.id, c.id, { keep: 'source' }), /rename or folder/);
   }
   assert.deepEqual([last.left, last.merging], [1, false]);
+});
+
+test('picking lines from either side of each conflict', async () => {
+  const { initialPicks, toggleLine, takeAll, swapOrder, undecided, pickedText } = await import('../client/src/conflictpick.js');
+  const { chunks } = mergeWithMarkers('a\nb\nc\nd\ne\n', 'a\nB1\nB2\nc\nd\nE1\n', 'a\nX\nc\nd\nE2\nE3\n');
+  assert.equal(chunks.filter((c) => !c.same).length, 2);
+  let picks = initialPicks(chunks);
+  assert.equal(undecided(picks), 2);
+  assert.equal(pickedText(chunks, picks, { source: 'f', target: 'main' }), 'a\n<<<<<<< f\nB1\nB2\n=======\nX\n>>>>>>> main\nc\nd\n<<<<<<< f\nE1\n=======\nE2\nE3\n>>>>>>> main\n');
+  // The first: the source's second line, then the target's line, target first.
+  const first = chunks.findIndex((c) => !c.same);
+  const second = chunks.findLastIndex((c) => !c.same);
+  picks = toggleLine(picks, first, 'source', 1);
+  picks = toggleLine(picks, first, 'target', 0);
+  picks = swapOrder(picks, first);
+  assert.equal(undecided(picks), 1);
+  // The second: all of both; then neither is a choice too.
+  picks = takeAll(picks, second, 'both');
+  assert.equal(pickedText(chunks, picks), 'a\nX\nB2\nc\nd\nE1\nE2\nE3\n');
+  picks = takeAll(picks, second, 'none');
+  assert.equal(undecided(picks), 0);
+  assert.equal(pickedText(chunks, picks), 'a\nX\nB2\nc\nd\n');
 });

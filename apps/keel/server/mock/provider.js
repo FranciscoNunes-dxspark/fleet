@@ -902,12 +902,13 @@ function demoConflicts(pr) {
 }
 
 // A demo conflict's three versions: the source branch's is the demo change, and the target
-// changed the same loop line another way (the conflict) and the header comment (merges cleanly).
+// changed the loop and the label another way (two conflicts) and the header comment (merges cleanly).
 function conflictSides(c) {
   const { before, after } = demoSource(c.path, 'edited');
   const target = before.split('\n');
+  target.splice(12, 1, '  return `Total: ${total} EUR`;', '  // Shown on invoices and receipts.');
+  target.splice(5, 3, '  for (const { price, qty } of items) {', '    total += Math.round(price * 100) * qty / 100;', '  }');
   target.splice(0, 1, `// ${c.path} (kept in sync with the pricing service)`);
-  target.splice(6, 1, '    total += Math.round(item.price * 100) * item.qty / 100;');
   const theirs = target.join('\n');
   switch (c.type) {
     case 'addAdd': return { base: '', source: after, target: theirs };

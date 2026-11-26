@@ -1199,6 +1199,22 @@ a.stage:hover { text-decoration: none; border-color: var(--line-strong); }
 .conflict-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; }
 .conflict-editor { display: grid; gap: 6px; margin-top: 6px; }
 .conflict-editor textarea { min-height: 160px; font-family: var(--mono); font-size: var(--text-sm); line-height: 1.5; white-space: pre; overflow-wrap: normal; overflow-x: auto; tab-size: 4; }
+.pick-file { display: grid; gap: 8px; font-size: var(--text-sm); line-height: 1.5; }
+.pick-line { white-space: pre-wrap; overflow-wrap: anywhere; min-width: 0; }
+.pick-same { color: var(--muted); padding: 0 8px; }
+.pick-hidden { font-family: var(--font); padding: 2px 0; }
+.pick-block { display: grid; gap: 6px; padding: 8px; border: 1px solid var(--line); border-left: 3px solid var(--warn); border-radius: var(--radius-sm); background: var(--surface-2); }
+.pick-block.decided { border-left-color: var(--ok); }
+.pick-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px; font-family: var(--font); }
+.pick-take { display: flex; flex-wrap: wrap; gap: 4px; }
+.pick-sides { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 6px; }
+.pick-side { display: grid; align-content: start; min-width: 0; border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--surface); }
+.pick-branch { padding: 2px 8px; border-bottom: 1px solid var(--line); color: var(--ink-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pick-row { display: grid; grid-template-columns: auto 1fr; align-items: center; gap: 6px; padding: 0 8px; cursor: pointer; }
+.pick-row:hover { background: var(--surface-2); }
+.pick-row.on { background: var(--accent-soft); }
+.pick-empty { padding: 4px 8px; font-family: var(--font); }
+.pick-result { display: grid; gap: 2px; padding: 4px 8px; border: 1px dashed var(--line-strong); border-radius: var(--radius-sm); }
 .conflict-fix { margin: 6px 0 10px; }
 .conflict-fix summary { cursor: pointer; color: var(--accent-ink); }
 .code-block { margin: 6px 0; padding: 8px 10px; background: var(--bg); border: 1px solid var(--line); border-radius: var(--radius-sm); font-family: var(--mono); white-space: pre; overflow-x: auto; }
