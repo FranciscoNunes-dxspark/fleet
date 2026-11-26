@@ -424,6 +424,16 @@ tr.saving { opacity: 0.55; }
 .row-link { background: none; border: 0; padding: 0; text-align: left; font-weight: 500; color: var(--ink); cursor: pointer; }
 .row-link:hover { color: var(--accent-ink); text-decoration: underline; }
 .sub { display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: center; margin-top: 3px; font-size: var(--text-sm); color: var(--muted); }
+/* Stacked pull requests (prstack.js): one built on another sits under it, a step in per level. */
+.stack-cell { display: flex; gap: 6px; padding-left: max(0px, calc((var(--stack-depth, 0) - 1) * 20px)); }
+.stack-arrow { color: var(--muted); font-family: var(--mono); flex: none; }
+.stack-body { min-width: 0; }
+.stack-note { color: var(--accent-ink); }
+.row-stacked > td:first-child { box-shadow: inset 2px 0 0 var(--line-strong); }
+.list-card-stacked { margin-left: calc(var(--stack-depth, 0) * 16px); }
+.stack-tree { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; }
+.stack-tree .stack-tree { padding-left: 20px; margin-top: 4px; }
+.stack-tree .stack-tree > li::before { content: "↳ "; color: var(--muted); font-family: var(--mono); }
 .branch {
   display: inline-block; max-width: 300px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; vertical-align: bottom;
   color: var(--ink-2); background: var(--surface-2); padding: 0 6px; border-radius: var(--radius-sm);

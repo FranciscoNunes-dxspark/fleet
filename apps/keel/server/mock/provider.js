@@ -28,7 +28,9 @@ function rng(seed) {
     return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
   };
 }
-const rand = rng(42);
+// Swappable, so data added late can draw from its own stream and leave the rest of the demo as it was.
+let draws = rng(42);
+const rand = () => draws();
 const pick = (arr) => arr[Math.floor(rand() * arr.length)];
 const between = (a, b) => a + rand() * (b - a);
 const sample = (arr, n) => [...arr].sort(() => rand() - 0.5).slice(0, n);
@@ -362,6 +364,18 @@ for (let i = 0; i < 140; i++) {
     title: PR_TITLES[(i * 7) % PR_TITLES.length], author, ageH: closedAgeH + cycleH, closedAgeH,
     status: rand() < 0.06 ? 'abandoned' : 'completed', reviewers,
   });
+}
+
+// A stack: each pull request goes into the branch of the one before it, so it builds on it.
+// Added after the rest, from a stream of its own, so the other demo data stays as it was.
+{
+  const c = PROJECTS[0];
+  const main = draws;
+  draws = rng(7);
+  const base = addPR(c, c.repoObjs[1], { title: 'Checkout: saved cards API', author: DEVS[2], ageH: 30, reviewers: [rv(DEVS[0], 10), rv(ME, 0)] });
+  const middle = addPR(c, c.repoObjs[1], { title: 'Checkout: saved cards in the payment step', author: DEVS[2], ageH: 26, reviewers: [rv(ME, 0)], target: base.sourceBranch });
+  addPR(c, c.repoObjs[1], { title: 'Checkout: remove a saved card', author: DEVS[2], ageH: 8, isDraft: true, reviewers: [], target: middle.sourceBranch });
+  draws = main;
 }
 
 // --------------------------------------------------------------------- builds

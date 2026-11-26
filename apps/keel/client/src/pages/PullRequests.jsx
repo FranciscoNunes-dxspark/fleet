@@ -7,6 +7,7 @@ import { t } from '../i18n.js';
 import { useProjectLabel } from '../orgs.js';
 import { SavedViews } from '../views.jsx';
 import { RiskScore, useRisks } from '../risk.jsx';
+import { stackRows } from '../prstack.js';
 import { Button, TextField } from '@radix-ui/themes';
 import { Select } from '../ui.jsx';
 
@@ -202,7 +203,7 @@ export default function PullRequests() {
 
       {rows.length > 0 && phone ? (
         <ol className="list-cards">
-          {apply(rows).map((p) => <PrCard key={p.key} p={p} risk={closed ? null : riskOf(p)} closed={closed} open={isOpen(p)} staleHours={staleHours} onOpen={() => openDrawer({ type: 'pr', projectId: p.projectId, repoId: p.repoId, id: p.id })} />)}
+          {(closed ? apply(rows).map((p) => ({ pr: p, depth: 0 })) : stackRows(apply(rows), data.prs)).map(({ pr: p, depth, on, stacked }) => <PrCard key={p.key} p={p} depth={depth} on={on} stacked={stacked} risk={closed ? null : riskOf(p)} closed={closed} open={isOpen(p)} staleHours={staleHours} onOpen={() => openDrawer({ type: 'pr', projectId: p.projectId, repoId: p.repoId, id: p.id })} />)}
         </ol>
       ) : !rows.length ? (
         <Empty title={t('No pull requests match.')}>{closed && !data.prs.length ? t('None were completed or abandoned in this period.') : t('Clear a filter to see more.')}</Empty>
@@ -268,16 +269,22 @@ export default function PullRequests() {
               </tr>
             </thead>
             <tbody>
-              {apply(rows).map((p) => (
-                <tr key={p.key} className={`clickable ${p.needsMyReview ? 'row-mine' : ''}${isOpen(p) ? ' row-open' : ''}`} aria-current={isOpen(p) || undefined} onClick={() => openDrawer({ type: 'pr', projectId: p.projectId, repoId: p.repoId, id: p.id })}>
+              {stackRows(apply(rows), data.prs).map(({ pr: p, depth, on, stacked }) => (
+                <tr key={p.key} className={`clickable ${p.needsMyReview ? 'row-mine' : ''}${isOpen(p) ? ' row-open' : ''}${depth ? ' row-stacked' : ''}`} aria-current={isOpen(p) || undefined} onClick={() => openDrawer({ type: 'pr', projectId: p.projectId, repoId: p.repoId, id: p.id })}>
                   <td className="cell-title">
-                    <button type="button" className="row-link" onClick={(e) => { e.stopPropagation(); openDrawer({ type: 'pr', projectId: p.projectId, repoId: p.repoId, id: p.id }); }}>
-                      {p.title}
-                    </button>
-                    <div className="sub">
-                      <span>{p.projectName} / {p.repoName}</span>
-                      <code className="branch">{p.sourceBranch} → {p.targetBranch}</code>
-                      <span className="mono muted">!{p.id}</span>
+                    <div className="stack-cell" style={{ '--stack-depth': depth }}>
+                      {depth > 0 && <span className="stack-arrow" aria-hidden="true">↳</span>}
+                      <div className="stack-body">
+                        <button type="button" className="row-link" onClick={(e) => { e.stopPropagation(); openDrawer({ type: 'pr', projectId: p.projectId, repoId: p.repoId, id: p.id }); }}>
+                          {p.title}
+                        </button>
+                        <div className="sub">
+                          <span>{p.projectName} / {p.repoName}</span>
+                          <code className="branch">{p.sourceBranch} → {p.targetBranch}</code>
+                          <span className="mono muted">!{p.id}</span>
+                          <StackNote on={on} stacked={stacked} nested={depth > 0} />
+                        </div>
+                      </div>
                     </div>
                   </td>
                   <td><Person person={p.author} /></td>
@@ -311,14 +318,27 @@ export default function PullRequests() {
   );
 }
 
-/** A pull request as a card (phones): where it is, its title, who wrote it, its reviewers and its state. */
-function PrCard({ p, risk, closed, open, staleHours, onOpen }) {
+/**
+ * Where a pull request sits in a stack: what it builds on (said only when its base isn't the row
+ * above it, which the nesting already shows) and how many build on it, which go after it.
+ */
+function StackNote({ on, stacked, nested }) {
+  return (
+    <>
+      {on && !nested && <span className="stack-note small" title={t('Its target branch is {branch}, the source branch of !{id}: complete that one first.', { branch: on.sourceBranch, id: on.id })}>{t('Builds on !{id}', { id: on.id })}</span>}
+      {stacked > 0 && <span className="stack-note small" title={t('Pull requests whose target branch is this one’s source branch. They go in after it.')}>{t('{n} stacked on it', { n: stacked })}</span>}
+    </>
+  );
+}
+
+/** A pull request as a card (phones): where it is, its title, who wrote it, its reviewers and its state; one built on another sits under it, indented. */
+function PrCard({ p, depth = 0, on = null, stacked = 0, risk, closed, open, staleHours, onOpen }) {
   const state = closed ? OUTCOME[p.status] : REVIEW_STATE[p.reviewState];
   return (
-    <li className={`list-card${p.needsMyReview && !closed ? ' list-card-mine' : ''}${p.hasConflicts && !closed ? ' list-card-bad' : ''}${open ? ' list-card-open' : ''}`}>
+    <li className={`list-card${p.needsMyReview && !closed ? ' list-card-mine' : ''}${p.hasConflicts && !closed ? ' list-card-bad' : ''}${open ? ' list-card-open' : ''}${depth ? ' list-card-stacked' : ''}`} style={depth ? { '--stack-depth': depth } : undefined}>
       <button type="button" className="list-card-hit" onClick={onOpen} aria-current={open || undefined}>
         <span className="list-card-top">
-          <span className="truncate">{p.repoName} · <span className="mono">!{p.id}</span></span>
+          <span className="truncate">{depth > 0 && <span className="stack-arrow" aria-hidden="true">↳ </span>}{p.repoName} · <span className="mono">!{p.id}</span></span>
           <span className={!closed && !p.isDraft && p.ageHours >= staleHours ? 'text-warn' : ''}>{closed ? t('{age} ago', { age: age(p.closedAt) }) : age(p.createdAt)}</span>
         </span>
         <span className="list-card-title">{p.title}</span>
@@ -333,6 +353,7 @@ function PrCard({ p, risk, closed, open, staleHours, onOpen }) {
           {!closed && p.hasConflicts && <Chip tone="bad">{t('Conflicts')}</Chip>}
           {!closed && p.checks === 'failed' && <Chip tone="bad">{t('Checks failed')}</Chip>}
           {!closed && p.autoComplete && <Chip tone="ok">{t('Auto-complete')}</Chip>}
+          {!closed && <StackNote on={on} stacked={stacked} nested={depth > 0} />}
         </span>
       </button>
     </li>

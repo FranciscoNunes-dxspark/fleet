@@ -12,6 +12,7 @@ import MergeStatus from './MergeStatus.jsx';
 import { SuggestedReviewers } from './NewPr.jsx';
 import Trace from '../line/Trace.jsx';
 import { RiskReasons, useRisks } from '../risk.jsx';
+import { stackBases } from '../prstack.js';
 import { RadioGroup, Button, TextArea, TextField } from '@radix-ui/themes';
 import { Checkbox, Select } from '../ui.jsx';
 
@@ -263,6 +264,8 @@ export default function PrDetail({ target }) {
         <br /><code className="branch">{pr.sourceBranch} → {pr.targetBranch}</code>
       </p>
 
+      {pr.status === 'active' && <PrStack pr={pr} />}
+
       {pr.schedule && <ScheduleNote s={pr.schedule} busy={busy === 'unschedule'} onCancel={writable ? cancelSchedule : null} />}
 
       <Trace pr={pr} />
@@ -465,6 +468,48 @@ const GITHUB_MERGE_TYPES = [
 ];
 
 const MERGE_LABEL = Object.fromEntries([...MERGE_TYPES, ...GITHUB_MERGE_TYPES].map(([v, label]) => [v, label]));
+
+/**
+ * The stack an active pull request is in (prstack.js): what it builds on, down to the one into a
+ * branch no pull request comes from, and what builds on it, nested; each opens in the panel.
+ * Nothing when it stands alone.
+ */
+function PrStack({ pr }) {
+  const { openDrawer } = useApp();
+  const { data } = useApi('/prs');
+  if (!data) return null;
+  const prs = data.prs;
+  const base = stackBases(prs);
+  const self = prs.find((p) => p.projectId === pr.projectId && p.repoId === pr.repoId && p.id === pr.id);
+  if (!self) return null;
+  const below = [];
+  for (let q = base.get(self.key); q; q = base.get(q.key)) below.unshift(q);
+  const on = (q) => prs.filter((p) => base.get(p.key)?.key === q.key);
+  if (!below.length && !on(self).length) return null;
+  const open = (p) => openDrawer({ type: 'pr', projectId: p.projectId, repoId: p.repoId, id: p.id });
+  const item = (p, current) => (
+    <span className={current ? 'stack-current' : ''}>
+      {current ? <strong>{p.title}</strong> : <button type="button" className="row-link" onClick={() => open(p)}>{p.title}</button>}
+      {' '}<span className="mono muted small">!{p.id}</span>{' '}<code className="branch">{p.sourceBranch} → {p.targetBranch}</code>
+    </span>
+  );
+  const above = (q) => {
+    const kids = on(q);
+    return kids.length ? <ul className="stack-tree">{kids.map((k) => <li key={k.key}>{item(k, false)}{above(k)}</li>)}</ul> : null;
+  };
+  const chain = [...below, self].reduceRight((inner, p) => (
+    <ul className="stack-tree"><li>{item(p, p === self)}{p === self ? above(self) : inner}</li></ul>
+  ), null);
+  return (
+    <section className="detail-section">
+      <h3>{t('Stack')}</h3>
+      <p className="small muted">{below.length
+        ? t('It goes into {branch}, which !{id} brings in: complete the ones under it first.', { branch: pr.targetBranch, id: below.at(-1).id })
+        : t('Others go into its source branch, {branch}: they go in after it.', { branch: pr.sourceBranch })}</p>
+      {chain}
+    </section>
+  );
+}
 
 /** A scheduled completion on its pull request: when, how and by whom, or how it went. */
 function ScheduleNote({ s, busy, onCancel }) {
