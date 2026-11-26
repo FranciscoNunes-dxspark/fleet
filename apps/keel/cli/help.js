@@ -74,6 +74,8 @@ export const HELP = [
       ['0', 'Clear your vote'],
       ['c', 'Complete (asks first; merge settings from Keel\'s Settings)'],
       ['m', 'Auto-complete on or off'],
+      ['/conflicts', 'Its merge conflicts, numbered'],
+      ['/resolve <#> source|target', 'Resolve one, keeping the source or target branch\'s side (the web app edits a merged file by hand)'],
       ['↵', 'The full pull request'],
       ['d', 'What changed: pick one of its files and read its diff, + and - lines in colour'],
       ['/comment <text>', 'Comment'],

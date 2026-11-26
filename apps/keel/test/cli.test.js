@@ -129,6 +129,30 @@ test('a pull request shows its step (publish → approval → complete), and p p
   app.unmount();
 });
 
+test('/conflicts lists a pull request\'s conflicts, and /resolve keeps one branch\'s side of one', async () => {
+  const app = start();
+  await until(() => frame().includes('Implement refund endpoint'), 'the Inbox');
+  app.stdin.write('4');
+  await until(() => frame().includes('Waiting on your review'), 'the Pull requests tab');
+  const { prs } = await keel.service.pullRequests();
+  const pr = prs.find((p) => p.hasConflicts);
+  await type(app.stdin, `/pr ${pr.id}`);
+  app.stdin.write(KEYS.enter);
+  await until(() => frame().includes(`!${pr.id} `) && frame().includes('merge conflicts'), 'the conflicted pull request');
+  await type(app.stdin, '/conflicts');
+  app.stdin.write(KEYS.enter);
+  await until(() => /\d of \d unresolved/.test(frame()), 'the conflicts');
+  const { conflicts } = await keel.service.pullRequestConflicts(pr.projectId, pr.repoId, pr.id);
+  const c = conflicts.find((x) => x.status !== 'resolved' && !x.type.startsWith('rename'));
+  assert.match(frame(), new RegExp(`#${c.id}`));
+  await type(app.stdin, `/resolve ${c.id} target`);
+  app.stdin.write(KEYS.enter);
+  await until(() => /Kept .*'s side\. \d left|Every conflict is resolved/.test(frame()), 'the resolution');
+  const after = await keel.service.pullRequestConflicts(pr.projectId, pr.repoId, pr.id);
+  assert.equal(after.conflicts.find((x) => x.id === c.id).status, 'resolved');
+  app.unmount();
+});
+
 test('the Pipelines tab lists failing pipelines first, with their latest runs', async () => {
   const app = start();
   await until(() => frame().includes('Implement refund endpoint'), 'the Inbox');

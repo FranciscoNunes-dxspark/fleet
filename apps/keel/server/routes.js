@@ -143,6 +143,15 @@ export function apiRouter({ channels = null, push = null, schedules = null } = {
     const { projectId, repoId, id } = req.params;
     res.json(await req.ctx.service.pullRequestConflicts(projectId, repoId, num(id)));
   });
+  r.get('/prs/:projectId/:repoId/:id/conflicts/:conflictId', async (req, res) => {
+    const { projectId, repoId, id, conflictId } = req.params;
+    res.json(await req.ctx.service.pullRequestConflict(projectId, repoId, num(id), num(conflictId)));
+  });
+  // Resolve one conflict: { keep: 'source' | 'target' } or { content } (the merged file).
+  r.post('/prs/:projectId/:repoId/:id/conflicts/:conflictId/resolve', need('prs.write'), async (req, res) => {
+    const { projectId, repoId, id, conflictId } = req.params;
+    res.json(await req.ctx.service.resolveConflict(projectId, repoId, num(id), num(conflictId), req.body || {}));
+  });
   // Complete a pull request at a set time (schedules.js), as the person scheduling it.
   r.post('/prs/:projectId/:repoId/:id/schedule', need('prs.write'), async (req, res) => {
     if (!schedules) throw Object.assign(new Error('Scheduling is not available on this server'), { status: 404 });

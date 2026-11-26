@@ -28,6 +28,7 @@ import { scorePr } from './domain/risk.js';
 import { approvalTarget, judgeReadiness } from './domain/readiness.js';
 import { incidentStart, incidentTimeline, lastGoodDeploy, redeployPlan, suspectDeploys } from './domain/incident.js';
 import { buildDiff, parsePatch } from './domain/filediff.js';
+import { conflictChoices, mergeWithMarkers, resolutionProblem } from './domain/conflicts.js';
 import { DEFAULT_MIN_SEVERITY, MIN_SEVERITIES, advisoryAttention, pickLockFiles, sortAdvisories } from './domain/advisories.js';
 import { eachLimited } from '@fleet/kit/osv.js';
 import { combineReviews, reviewProject } from './domain/devopssecurity.js';
@@ -1458,6 +1459,40 @@ export function createService({
     /** Merge conflicts of a pull request (fresh each time: they change as people push). */
     async pullRequestConflicts(projectId, repoId, id) {
       return { conflicts: await provider.listPullRequestConflicts(projectId, repoId, id) };
+    },
+
+    /**
+     * One conflict with its file's three versions, what Keel can do about it, and the file merged
+     * with markers where both branches changed the same lines, as the editor starts from.
+     */
+    async pullRequestConflict(projectId, repoId, id, conflictId) {
+      const [c, pr] = await Promise.all([
+        provider.getPullRequestConflict(projectId, repoId, id, conflictId),
+        cached(`pr:${projectId}/${repoId}/${id}`, () => provider.getPullRequest(projectId, repoId, id), 30 * 1000),
+      ]);
+      const choices = conflictChoices(c.type);
+      const merged = choices.edit ? mergeWithMarkers(c.base, c.source, c.target, { source: pr.sourceBranch, target: pr.targetBranch }) : null;
+      return { ...c, choices, merged };
+    },
+
+    /**
+     * Resolves one conflict ({ keep: 'source' | 'target' } or { content }). Once none is left,
+     * the merge runs again, so the pull request can complete with the resolutions.
+     */
+    async resolveConflict(projectId, repoId, id, conflictId, resolution) {
+      const listed = await provider.listPullRequestConflicts(projectId, repoId, id);
+      const c = listed.find((x) => String(x.id) === String(conflictId));
+      if (!c) throw Object.assign(new Error('That conflict isn\'t on the pull request any more. It may have been fixed by a push.'), { status: 404 });
+      const problem = resolutionProblem(c.type, resolution);
+      if (problem) throw Object.assign(new Error(problem), { status: 400 });
+      const given = typeof resolution.content === 'string' ? { content: resolution.content } : { keep: resolution.keep };
+      await provider.resolvePullRequestConflict(projectId, repoId, id, c.id, c.type, given);
+      const conflicts = await provider.listPullRequestConflicts(projectId, repoId, id);
+      const left = conflicts.filter((x) => x.status !== 'resolved').length;
+      if (!left) await provider.restartMerge(projectId, repoId, id);
+      cache.invalidate('prs:');
+      cache.invalidate(`pr:${projectId}/${repoId}/${id}`);
+      return { conflicts, left, merging: !left };
     },
 
     async prAction(projectId, repoId, id, action) {

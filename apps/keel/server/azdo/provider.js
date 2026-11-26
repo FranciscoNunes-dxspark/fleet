@@ -7,6 +7,7 @@ import { createClient, seg } from './client.js';
 import { stageSummary } from '../domain/releases.js';
 import { stagesOf, stagesOfYaml } from '../domain/pipelines.js';
 import { pipelineParameters } from '../domain/parameters.js';
+import { resolutionBody } from '../domain/conflicts.js';
 
 const EMPTY_GUID = '00000000-0000-0000-0000-000000000000';
 
@@ -775,6 +776,44 @@ export function createAzdoProvider({ orgUrl = config.orgUrl, pat = config.pat, t
           status: enumName(c.resolutionStatus, RESOLUTION),
         }))
         .sort((a, b) => (a.status === 'resolved') - (b.status === 'resolved') || a.path.localeCompare(b.path));
+    },
+
+    /**
+     * One merge conflict with its file's three versions: the merge base's, the source branch's and
+     * the target's ('' where the file doesn't exist on that side), read from the conflict's blobs.
+     */
+    async getPullRequestConflict(projectId, repoId, prId, conflictId) {
+      const repo = `${seg(projectId)}/_apis/git/repositories/${seg(repoId)}`;
+      const c = await api(`${repo}/pullRequests/${prId}/conflicts/${seg(conflictId)}`, { apiVersion: '7.1-preview.1' });
+      const blob = async (b) => {
+        if (!b?.objectId) return '';
+        try {
+          return await apiText(`${repo}/blobs/${seg(b.objectId)}`, { query: { $format: 'text' } });
+        } catch (err) {
+          if (err.status === 404) return '';
+          throw err;
+        }
+      };
+      const [base, source, target] = await Promise.all([blob(c.baseBlob), blob(c.sourceBlob), blob(c.targetBlob)]);
+      return {
+        id: c.conflictId,
+        path: c.conflictPath || '',
+        type: enumName(c.conflictType, CONFLICT_TYPES),
+        status: enumName(c.resolutionStatus, RESOLUTION),
+        base, source, target,
+      };
+    },
+
+    /**
+     * Resolves one conflict ({ keep: 'source' | 'target' } or { content }). Azure DevOps keeps the
+     * resolution and applies it in the pull request's merge commit, so the source branch is untouched.
+     */
+    async resolvePullRequestConflict(projectId, repoId, prId, conflictId, type, resolution) {
+      await api(`${seg(projectId)}/_apis/git/repositories/${seg(repoId)}/pullRequests/${prId}/conflicts/${seg(conflictId)}`, {
+        method: 'PATCH',
+        apiVersion: '7.1-preview.1',
+        body: resolutionBody(Number(conflictId), type, resolution),
+      });
     },
 
     /**

@@ -1,7 +1,7 @@
 // Every user-facing operation, written once: keys in the views and slash commands both call
 // these with `ctx` (built in ui/App.jsx). Questions before anything that can't be undone live here.
 import { sonarArgs } from './sonar.js';
-import { branch, diffText, isGithubPr, parametersText, summaryText, summaryWeek } from './format.js';
+import { branch, conflictLines, diffText, isGithubPr, parametersText, summaryText, summaryWeek } from './format.js';
 import { parameterValues } from '../server/domain/parameters.js';
 import { fieldValues, filterFields, splitFilter, withField } from './filters.js';
 import { approvalsFor, deployChoices, downloadChoices, isGithubRelease, stageStatus } from './releases.js';
@@ -98,7 +98,7 @@ export async function vote(ctx, pr = ctx.current().pr, value) {
 export async function complete(ctx, pr = ctx.current().pr) {
   if (!pr) return ctx.note('Pick a pull request first.', 'error');
   if (pr.isDraft) return ctx.note(`${prName(pr)} is a draft: p publishes it first, then it needs approving.`, 'error');
-  if (pr.hasConflicts) return ctx.note(`${prName(pr)} has merge conflicts: fix them before completing it.`, 'error');
+  if (pr.hasConflicts) return ctx.note(`${prName(pr)} has merge conflicts: /conflicts lists them, /resolve fixes each one.`, 'error');
   // Held while its checks (tests, builds) run, and after they fail, as the web app holds it.
   if (pr.flow?.waiting?.kind === 'checks') return ctx.note(`${prName(pr)}'s checks are still running: complete it once they pass, or m to merge it by itself then.`, 'error');
   if (pr.flow?.waiting?.kind === 'checks-failed') return ctx.note(`${prName(pr)}'s checks failed: fix them before completing it. o shows them on GitHub.`, 'error');
@@ -144,6 +144,33 @@ export async function autoComplete(ctx, pr = ctx.current().pr) {
     await ctx.reload();
     return [enabled ? 'It completes by itself once policies pass.' : 'Auto-complete is off.'];
   }, { label: 'Saving' });
+}
+
+/** /conflicts: the selected pull request's merge conflicts. */
+export async function conflicts(ctx, pr = ctx.current().pr) {
+  if (!pr) return ctx.note('Pick a pull request first.', 'error');
+  if (isGithubPr(pr)) return ctx.note('GitHub doesn\'t list a pull request\'s conflicts: o opens it there.', 'error');
+  if (!pr.hasConflicts) return ctx.note(`${prName(pr)} has no merge conflicts.`);
+  await ctx.task(`Conflicts of ${prName(pr)}`, async () => conflictLines(pr, (await ctx.service.pullRequestConflicts(pr.projectId, pr.repoId, pr.id)).conflicts), { label: 'Reading' });
+}
+
+/** /resolve <#> source|target: settles one conflict by keeping one branch's side of it. */
+export async function resolveConflict(ctx, pr = ctx.current().pr, args = '') {
+  if (!pr) return ctx.note('Pick a pull request first.', 'error');
+  if (isGithubPr(pr)) return ctx.note('GitHub doesn\'t list a pull request\'s conflicts: o opens it there.', 'error');
+  const [num, side] = args.trim().replace(/^#/, '').split(/\s+/);
+  const sides = { source: 'source', target: 'target', [branch(pr.sourceBranch)]: 'source', [branch(pr.targetBranch)]: 'target' };
+  const keep = sides[side];
+  if (!/^\d+$/.test(num || '') || !keep) return ctx.note(`/resolve <#> source|target: the number from /conflicts, then whose side to keep (${branch(pr.sourceBranch)}'s or ${branch(pr.targetBranch)}'s).`, 'error');
+  await ctx.task(`Resolve conflict #${num} of ${prName(pr)}`, async () => {
+    const done = await ctx.service.resolveConflict(pr.projectId, pr.repoId, pr.id, Number(num), { keep });
+    const c = done.conflicts.find((x) => String(x.id) === num);
+    did(ctx, `Resolved ${c?.path.replace(/^\//, '') ?? `conflict #${num}`} in ${prName(pr)}${inRepo(pr)}, keeping ${branch(keep === 'source' ? pr.sourceBranch : pr.targetBranch)}`, 'review');
+    await ctx.reload();
+    return done.merging
+      ? ['Every conflict is resolved: Azure DevOps is merging again.']
+      : [`Kept ${branch(keep === 'source' ? pr.sourceBranch : pr.targetBranch)}'s side. ${done.left} left: /conflicts lists them.`];
+  }, { label: 'Resolving' });
 }
 
 /** /comment: on the selected pull request, or work item. */
