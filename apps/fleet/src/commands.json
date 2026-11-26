@@ -2271,6 +2271,16 @@
    "desc": "Turn auto-complete on or off"
   },
   {
+   "name": "conflicts",
+   "args": "",
+   "desc": "List the pull request's merge conflicts"
+  },
+  {
+   "name": "resolve",
+   "args": "<#> <source|target>",
+   "desc": "Resolve one merge conflict, keeping one branch's side"
+  },
+  {
    "name": "comment",
    "args": "<text>",
    "desc": "Comment on the pull request or work item"
